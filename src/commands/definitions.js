@@ -49,7 +49,12 @@ export const commands = [
       { name: 'Assists', value: 'assists' },
       { name: 'Revives', value: 'revives' },
       { name: 'Longest Kill', value: 'longestKill' },
-      { name: 'Bots ignorados', value: 'botKillsIgnored' }
+      { name: 'DBNOs / Knocks', value: 'dbnos' },
+      { name: 'Headshots', value: 'headshotKills' },
+      { name: 'Team Kills', value: 'teamKills' },
+      { name: 'Kills em bots ignoradas', value: 'botKillsIgnored' },
+      { name: 'DBNOs em bots ignorados', value: 'botDbnosIgnored' },
+      { name: 'Dano em bots ignorado', value: 'botDamageIgnored' }
     ))
     .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
       { name: 'Oficial', value: 'oficial' },
@@ -96,7 +101,9 @@ export const commands = [
       { name: 'DBNOs / Knocks', value: 'dbnos' },
       { name: 'Longest Kill', value: 'longestKill' },
       { name: 'Team Kills', value: 'teamKills' },
-      { name: 'Bots ignorados', value: 'botKillsIgnored' }
+      { name: 'Kills em bots ignoradas', value: 'botKillsIgnored' },
+      { name: 'DBNOs em bots ignorados', value: 'botDbnosIgnored' },
+      { name: 'Dano em bots ignorado', value: 'botDamageIgnored' }
     ))
     .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
       { name: 'Oficial', value: 'oficial' },

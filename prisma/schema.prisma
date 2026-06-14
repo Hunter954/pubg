@@ -131,6 +131,7 @@ model CleanMatch {
   gameMode    String?
   playedAt    DateTime?
   processedAt DateTime?
+  parserVersion String?
   createdAt   DateTime @default(now())
 
   playerStats CleanPlayerMatchStats[]
@@ -151,6 +152,7 @@ model CleanPlayerMatchStats {
   botKillsIgnored  Int      @default(0)
   assists          Int      @default(0)
   damage           Float    @default(0)
+  botDamageIgnored Float    @default(0)
   wins             Int      @default(0)
   top10s           Int      @default(0)
   revives          Int      @default(0)
@@ -181,6 +183,7 @@ model CleanPlayerStats {
   botKillsIgnored  Int      @default(0)
   assists          Int      @default(0)
   damage           Float    @default(0)
+  botDamageIgnored Float    @default(0)
   wins             Int      @default(0)
   top10s           Int      @default(0)
   revives          Int      @default(0)

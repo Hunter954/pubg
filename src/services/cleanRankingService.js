@@ -3,10 +3,17 @@ import { config } from '../config.js';
 import { calculateScore } from '../utils/score.js';
 import { getCurrentSeasonId, getPlayerRecentMatchIds, getMatch, getTelemetryEvents } from './pubgApi.js';
 
+const CLEAN_PARSER_VERSION = 'teamid-200-v2';
+const BOT_TEAM_ID_MIN = 200;
+
 const CLEAN_ORDER_FIELDS = new Set([
-  'score', 'kills', 'damage', 'wins', 'top10s', 'revives', 'longestKill',
+  'score', 'kills', 'damage', 'botDamageIgnored', 'wins', 'top10s', 'revives', 'longestKill',
   'matchesPlayed', 'deaths', 'teamKills', 'headshotKills', 'dbnos', 'botKillsIgnored', 'botDbnosIgnored'
 ]);
+
+function logCleanWarn(message, details = {}) {
+  console.warn('[clean-ranking]', message, details);
+}
 
 function findTelemetryUrl(match) {
   const asset = (match?.included || []).find((item) => item.type === 'asset' && item.attributes?.URL);
@@ -30,6 +37,7 @@ function emptyCleanStats() {
     botKillsIgnored: 0,
     assists: 0,
     damage: 0,
+    botDamageIgnored: 0,
     wins: 0,
     top10s: 0,
     revives: 0,
@@ -43,22 +51,78 @@ function emptyCleanStats() {
   };
 }
 
-function getAccountId(character) {
-  return character?.accountId || character?.accountIdString || character?.playerId || null;
+function firstDefined(...values) {
+  return values.find((value) => value !== undefined && value !== null);
 }
 
-function getTeamId(character) {
-  const value = character?.teamId;
-  const teamId = Number(value);
-  return Number.isFinite(teamId) ? teamId : null;
+function getAccountId(character) {
+  return firstDefined(
+    character?.accountId,
+    character?.accountIdString,
+    character?.playerId,
+    character?.playerIdString,
+    character?.id
+  ) || null;
+}
+
+function getTeamId(character, context = {}) {
+  const raw = firstDefined(
+    character?.teamId,
+    character?.teamID,
+    character?.team_id,
+    character?.team
+  );
+  if (raw === undefined || raw === null || raw === '') {
+    logCleanWarn('teamId ausente na telemetry; evento ignorado para classificação anti-bot', context);
+    return null;
+  }
+
+  const teamId = Number(raw);
+  if (!Number.isFinite(teamId)) {
+    logCleanWarn('teamId inválido na telemetry; evento ignorado para classificação anti-bot', { ...context, teamId: raw });
+    return null;
+  }
+  return teamId;
 }
 
 function isBotTeam(teamId) {
-  return Number.isFinite(Number(teamId)) && Number(teamId) >= 200;
+  return Number.isFinite(Number(teamId)) && Number(teamId) >= BOT_TEAM_ID_MIN;
+}
+
+function isSameTeam(a, b) {
+  return a !== null && b !== null && Number(a) === Number(b);
+}
+
+function getKillKiller(event) {
+  return firstDefined(event.killer, event.attacker, event.finisher, event.damageCauser, event.killerCharacter);
+}
+
+function getKillVictim(event) {
+  return firstDefined(event.victim, event.character, event.target, event.victimCharacter);
+}
+
+function getGroggyAttacker(event) {
+  return firstDefined(event.attacker, event.killer, event.damageCauser, event.instigator);
+}
+
+function getDamageAttacker(event) {
+  return firstDefined(event.attacker, event.killer, event.damageCauser, event.instigator);
+}
+
+function getDamageVictim(event) {
+  return firstDefined(event.victim, event.character, event.target);
 }
 
 function isHeadshot(event) {
-  return String(event.damageReason || event.reason || '').toLowerCase().includes('headshot');
+  const values = [
+    event.damageReason,
+    event.reason,
+    event.killerDamageInfo?.damageReason,
+    event.finishDamageInfo?.damageReason,
+    event.victimDamageInfo?.damageReason,
+    event.damageInfo?.damageReason
+  ];
+  return values.some((value) => String(value || '').toLowerCase().includes('headshot'));
 }
 
 function distanceMeters(value) {
@@ -68,6 +132,12 @@ function distanceMeters(value) {
   return distance > 1000 ? distance / 100 : distance;
 }
 
+function eventDamage(event) {
+  const value = firstDefined(event.damage, event.damageDealt, event.damageAmount, event.damageInfo?.damage, event.damageInfo?.damageDealt);
+  const damage = Number(value || 0);
+  return Number.isFinite(damage) ? Math.max(0, damage) : 0;
+}
+
 function sumCleanRows(rows) {
   const total = emptyCleanStats();
   for (const row of rows) {
@@ -75,6 +145,7 @@ function sumCleanRows(rows) {
     total.botKillsIgnored += Number(row.botKillsIgnored || 0);
     total.assists += Number(row.assists || 0);
     total.damage += Number(row.damage || 0);
+    total.botDamageIgnored += Number(row.botDamageIgnored || 0);
     total.wins += Number(row.wins || 0);
     total.top10s += Number(row.top10s || 0);
     total.revives += Number(row.revives || 0);
@@ -103,7 +174,7 @@ async function refreshCleanPlayerStats(playerId, seasonId, gameMode) {
   return total;
 }
 
-function buildInitialPlayerStats(match, playersInMatch, participantByAccountId) {
+function buildInitialPlayerStats(playersInMatch, participantByAccountId) {
   const byAccountId = new Map();
 
   for (const player of playersInMatch) {
@@ -121,67 +192,128 @@ function buildInitialPlayerStats(match, playersInMatch, participantByAccountId) 
   return byAccountId;
 }
 
+function applyKillEvent(event, byAccountId, totals) {
+  const killer = getKillKiller(event);
+  const victim = getKillVictim(event);
+  const killerAccountId = getAccountId(killer);
+  const entry = byAccountId.get(killerAccountId);
+  if (!entry) return;
+
+  const victimTeamId = getTeamId(victim, { type: event._T, matchId: event.matchId, actor: 'victim', accountId: getAccountId(victim) });
+  if (victimTeamId === null) return;
+
+  const killerTeamId = getTeamId(killer, { type: event._T, matchId: event.matchId, actor: 'killer', accountId: killerAccountId });
+  if (isBotTeam(victimTeamId)) {
+    entry.stats.botKillsIgnored += 1;
+    totals.botKillsIgnored += 1;
+    return;
+  }
+
+  if (isSameTeam(victimTeamId, killerTeamId)) {
+    entry.stats.teamKills += 1;
+    return;
+  }
+
+  entry.stats.kills += 1;
+  totals.kills += 1;
+  if (isHeadshot(event)) entry.stats.headshotKills += 1;
+  entry.stats.longestKill = Math.max(entry.stats.longestKill, distanceMeters(event.distance));
+}
+
+function applyGroggyEvent(event, byAccountId, totals) {
+  const attacker = getGroggyAttacker(event);
+  const victim = getKillVictim(event);
+  const attackerAccountId = getAccountId(attacker);
+  const entry = byAccountId.get(attackerAccountId);
+  if (!entry) return;
+
+  const victimTeamId = getTeamId(victim, { type: event._T, matchId: event.matchId, actor: 'victim', accountId: getAccountId(victim) });
+  if (victimTeamId === null) return;
+
+  const attackerTeamId = getTeamId(attacker, { type: event._T, matchId: event.matchId, actor: 'attacker', accountId: attackerAccountId });
+  if (isBotTeam(victimTeamId)) {
+    entry.stats.botDbnosIgnored += 1;
+    totals.botDbnosIgnored += 1;
+    return;
+  }
+
+  if (isSameTeam(victimTeamId, attackerTeamId)) return;
+  entry.stats.dbnos += 1;
+  totals.dbnos += 1;
+}
+
+function applyDamageEvent(event, byAccountId, totals) {
+  const attacker = getDamageAttacker(event);
+  const victim = getDamageVictim(event);
+  const attackerAccountId = getAccountId(attacker);
+  const victimAccountId = getAccountId(victim);
+  const entry = byAccountId.get(attackerAccountId);
+  if (!entry || !victimAccountId || attackerAccountId === victimAccountId) return;
+
+  const victimTeamId = getTeamId(victim, { type: event._T, matchId: event.matchId, actor: 'victim', accountId: victimAccountId });
+  if (victimTeamId === null) return;
+
+  const attackerTeamId = getTeamId(attacker, { type: event._T, matchId: event.matchId, actor: 'attacker', accountId: attackerAccountId });
+  const damage = eventDamage(event);
+  if (!damage) return;
+
+  if (isBotTeam(victimTeamId)) {
+    entry.stats.botDamageIgnored += damage;
+    totals.botDamageIgnored += damage;
+    return;
+  }
+
+  if (isSameTeam(victimTeamId, attackerTeamId)) return;
+  entry.stats.damage += damage;
+  totals.damage += damage;
+}
+
 function applyTelemetryCleanStats(events, byAccountId) {
+  const totals = {
+    kills: 0,
+    botKillsIgnored: 0,
+    dbnos: 0,
+    botDbnosIgnored: 0,
+    damage: 0,
+    botDamageIgnored: 0
+  };
+
+  if (!Array.isArray(events)) {
+    logCleanWarn('Telemetry em formato inesperado; esperado array de eventos', { receivedType: typeof events });
+    return totals;
+  }
+
   for (const event of events) {
-    const type = event._T;
+    try {
+      const type = event?._T;
+      if (!type) continue;
 
-    if (type === 'LogPlayerKill') {
-      const killerAccountId = getAccountId(event.killer);
-      const victimTeamId = getTeamId(event.victim);
-      const killerTeamId = getTeamId(event.killer);
-      const entry = byAccountId.get(killerAccountId);
-      if (!entry) continue;
-
-      if (isBotTeam(victimTeamId)) {
-        entry.stats.botKillsIgnored += 1;
+      if (type === 'LogPlayerKill' || type === 'LogPlayerKillV2') {
+        applyKillEvent(event, byAccountId, totals);
         continue;
       }
 
-      if (victimTeamId !== null && killerTeamId !== null && victimTeamId === killerTeamId) {
-        entry.stats.teamKills += 1;
+      if (type === 'LogPlayerMakeGroggy') {
+        applyGroggyEvent(event, byAccountId, totals);
         continue;
       }
 
-      entry.stats.kills += 1;
-      if (isHeadshot(event)) entry.stats.headshotKills += 1;
-      entry.stats.longestKill = Math.max(entry.stats.longestKill, distanceMeters(event.distance));
-    }
-
-    if (type === 'LogPlayerMakeGroggy') {
-      const attackerAccountId = getAccountId(event.attacker);
-      const victimTeamId = getTeamId(event.victim);
-      const attackerTeamId = getTeamId(event.attacker);
-      const entry = byAccountId.get(attackerAccountId);
-      if (!entry) continue;
-
-      if (isBotTeam(victimTeamId)) {
-        entry.stats.botDbnosIgnored += 1;
+      if (type === 'LogPlayerTakeDamage') {
+        applyDamageEvent(event, byAccountId, totals);
         continue;
       }
 
-      if (victimTeamId !== null && attackerTeamId !== null && victimTeamId === attackerTeamId) continue;
-      entry.stats.dbnos += 1;
-    }
-
-    if (type === 'LogPlayerTakeDamage') {
-      const attackerAccountId = getAccountId(event.attacker);
-      const victimAccountId = getAccountId(event.victim);
-      const victimTeamId = getTeamId(event.victim);
-      const attackerTeamId = getTeamId(event.attacker);
-      const entry = byAccountId.get(attackerAccountId);
-      if (!entry || !victimAccountId || attackerAccountId === victimAccountId) continue;
-      if (isBotTeam(victimTeamId)) continue;
-      if (victimTeamId !== null && attackerTeamId !== null && victimTeamId === attackerTeamId) continue;
-      entry.stats.damage += Math.max(0, Number(event.damage || 0));
-    }
-
-    if (type === 'LogPlayerRevive') {
-      const reviverAccountId = getAccountId(event.reviver);
-      const entry = byAccountId.get(reviverAccountId);
-      if (!entry) continue;
-      entry.stats.revives += 1;
+      if (type === 'LogPlayerRevive') {
+        const reviverAccountId = getAccountId(event.reviver);
+        const entry = byAccountId.get(reviverAccountId);
+        if (entry) entry.stats.revives += 1;
+      }
+    } catch (error) {
+      logCleanWarn('Evento de telemetry ignorado por erro no parser', { type: event?._T, error: error.message });
     }
   }
+
+  return totals;
 }
 
 export async function syncCleanGuild(guildId, options = {}) {
@@ -193,13 +325,17 @@ export async function syncCleanGuild(guildId, options = {}) {
 
   const shard = cfg.platform || config.pubgShard;
   const gameMode = cfg.gameMode || config.pubgGameMode;
-  const seasonId = await getCurrentSeasonId(shard).catch(() => null);
+  const seasonId = await getCurrentSeasonId(shard).catch((error) => {
+    logCleanWarn('Não consegui obter a season atual; sync limpo continuará sem seasonId', { error: error.message });
+    return null;
+  });
   const players = await prisma.player.findMany({ where: { guildId, isActive: true } });
   if (!players.length) throw new Error('Nenhum jogador cadastrado no ranking.');
 
   const playerByAccountId = new Map(players.map((p) => [p.pubgAccountId, p]));
   const candidateMatchIds = new Map();
   const maxRecentPerPlayer = Math.min(Math.max(Number(options.maxRecentPerPlayer) || 10, 1), 20);
+  const playerErrors = [];
 
   for (const player of players) {
     try {
@@ -210,18 +346,23 @@ export async function syncCleanGuild(guildId, options = {}) {
         candidateMatchIds.set(matchId, current);
       });
       await new Promise((r) => setTimeout(r, 250));
-    } catch (_) {
-      // Se um jogador falhar, seguimos com os demais para não travar o sync limpo.
+    } catch (error) {
+      playerErrors.push({ player, error: error.message });
+      logCleanWarn('Falha buscando partidas recentes do jogador; seguindo com os demais', { player: player.pubgNick, error: error.message });
     }
   }
 
   const candidates = [...candidateMatchIds.values()].sort((a, b) => a.bestIndex - b.bestIndex).slice(0, 30);
-  const results = [];
+  const matchErrors = [];
   const changedPlayerIds = new Set();
   let processedMatches = 0;
   let skippedMatches = 0;
+  let realKills = 0;
   let botKillsIgnored = 0;
+  let realDbnos = 0;
   let botDbnosIgnored = 0;
+  let cleanDamage = 0;
+  let botDamageIgnored = 0;
 
   for (const candidate of candidates) {
     try {
@@ -245,7 +386,7 @@ export async function syncCleanGuild(guildId, options = {}) {
       });
       const existingPlayerIds = new Set((existingMatch?.playerStats || []).map((row) => row.playerId));
       const hasAllPlayers = playersInMatch.every((p) => existingPlayerIds.has(p.id));
-      if (existingMatch?.processedAt && hasAllPlayers) {
+      if (existingMatch?.processedAt && existingMatch.parserVersion === CLEAN_PARSER_VERSION && hasAllPlayers) {
         skippedMatches += 1;
         continue;
       }
@@ -253,12 +394,28 @@ export async function syncCleanGuild(guildId, options = {}) {
       const telemetryUrl = findTelemetryUrl(match);
       if (!telemetryUrl) {
         skippedMatches += 1;
+        logCleanWarn('Partida sem asset/telemetry; ignorada', { matchId: candidate.matchId });
         continue;
       }
 
-      const byAccountId = buildInitialPlayerStats(match, playersInMatch, participants);
-      const events = await getTelemetryEvents(telemetryUrl);
-      applyTelemetryCleanStats(events, byAccountId);
+      const byAccountId = buildInitialPlayerStats(playersInMatch, participants);
+      let events = [];
+      try {
+        events = await getTelemetryEvents(telemetryUrl);
+      } catch (error) {
+        skippedMatches += 1;
+        matchErrors.push({ matchId: candidate.matchId, error: error.message });
+        logCleanWarn('Falha baixando telemetry; partida ignorada', { matchId: candidate.matchId, error: error.message });
+        continue;
+      }
+
+      const matchTotals = applyTelemetryCleanStats(events, byAccountId);
+      realKills += matchTotals.kills;
+      botKillsIgnored += matchTotals.botKillsIgnored;
+      realDbnos += matchTotals.dbnos;
+      botDbnosIgnored += matchTotals.botDbnosIgnored;
+      cleanDamage += matchTotals.damage;
+      botDamageIgnored += matchTotals.botDamageIgnored;
 
       const cleanMatch = await prisma.cleanMatch.upsert({
         where: { guildId_matchId: { guildId, matchId: candidate.matchId } },
@@ -266,7 +423,8 @@ export async function syncCleanGuild(guildId, options = {}) {
           mapName: attrs.mapName || null,
           gameMode: attrs.gameMode || gameMode,
           playedAt: attrs.createdAt ? new Date(attrs.createdAt) : null,
-          processedAt: new Date()
+          processedAt: new Date(),
+          parserVersion: CLEAN_PARSER_VERSION
         },
         create: {
           guildId,
@@ -274,14 +432,13 @@ export async function syncCleanGuild(guildId, options = {}) {
           mapName: attrs.mapName || null,
           gameMode: attrs.gameMode || gameMode,
           playedAt: attrs.createdAt ? new Date(attrs.createdAt) : null,
-          processedAt: new Date()
+          processedAt: new Date(),
+          parserVersion: CLEAN_PARSER_VERSION
         }
       });
 
       for (const { player, stats } of byAccountId.values()) {
         stats.score = calculateScore(stats);
-        botKillsIgnored += stats.botKillsIgnored;
-        botDbnosIgnored += stats.botDbnosIgnored;
 
         await prisma.cleanPlayerMatchStats.upsert({
           where: { cleanMatchId_playerId: { cleanMatchId: cleanMatch.id, playerId: player.id } },
@@ -294,26 +451,38 @@ export async function syncCleanGuild(guildId, options = {}) {
       processedMatches += 1;
       await new Promise((r) => setTimeout(r, 700));
     } catch (error) {
-      results.push({ matchId: candidate.matchId, ok: false, error: error.message });
+      matchErrors.push({ matchId: candidate.matchId, error: error.message });
+      logCleanWarn('Erro geral processando partida; seguindo sync', { matchId: candidate.matchId, error: error.message });
     }
   }
 
   const updatedPlayers = [];
   for (const playerId of changedPlayerIds) {
-    const total = await refreshCleanPlayerStats(playerId, seasonId, gameMode);
-    updatedPlayers.push({ playerId, total });
+    try {
+      const total = await refreshCleanPlayerStats(playerId, seasonId, gameMode);
+      updatedPlayers.push({ playerId, total });
+    } catch (error) {
+      matchErrors.push({ matchId: 'refresh-stats', error: `Player ${playerId}: ${error.message}` });
+    }
   }
 
   return {
     seasonId,
     gameMode,
+    parserVersion: CLEAN_PARSER_VERSION,
     candidateMatches: candidates.length,
+    foundMatches: candidates.length,
     processedMatches,
     skippedMatches,
     updatedPlayers,
+    realKills,
     botKillsIgnored,
+    realDbnos,
     botDbnosIgnored,
-    errors: results.filter((r) => !r.ok)
+    cleanDamage,
+    botDamageIgnored,
+    playerErrors,
+    errors: matchErrors
   };
 }
 
@@ -334,6 +503,6 @@ export async function getCleanTopRanking(guildId, orderBy = 'kills', limit = 10)
 export async function getCleanPlayerStatsByDiscord(guildId, discordId) {
   return prisma.player.findUnique({
     where: { guildId_discordId: { guildId, discordId } },
-    include: { cleanStats: true }
+    include: { stats: true, cleanStats: true }
   });
 }

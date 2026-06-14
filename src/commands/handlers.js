@@ -24,8 +24,9 @@ const CATEGORY_LABELS = {
   teamKills: 'Team Kills',
   headshotKills: 'Headshots',
   dbnos: 'DBNOs / Knocks',
-  botKillsIgnored: 'Bots ignorados',
-  botDbnosIgnored: 'DBNOs em bots ignorados'
+  botKillsIgnored: 'Kills em bots ignoradas',
+  botDbnosIgnored: 'DBNOs em bots ignorados',
+  botDamageIgnored: 'Dano em bots ignorado'
 };
 
 function statValue(row, field) {
@@ -133,9 +134,17 @@ async function handleAdmin(interaction) {
       .slice(0, 5)
       .map((r) => `• Match ${r.matchId}: ${r.error}`)
       .join('\n');
-    const extra = failLines ? `\n\n⚠️ Falhas:\n${failLines}` : '';
+    const playerFailLines = (result.playerErrors || [])
+      .slice(0, 5)
+      .map((r) => `• ${r.player?.pubgNick || 'Jogador'}: ${r.error}`)
+      .join('\n');
+    const extra = [
+      playerFailLines ? `\n\n⚠️ Erros por jogador:\n${playerFailLines}` : '',
+      failLines ? `\n\n⚠️ Falhas em partidas:\n${failLines}` : ''
+    ].join('');
     return interaction.editReply(
-      `✅ Sync limpo finalizado. Modo: **${result.gameMode}** | Partidas processadas: **${result.processedMatches}** | Puladas: **${result.skippedMatches}** | Jogadores atualizados: **${result.updatedPlayers.length}** | Kills em bots ignoradas: **${int(result.botKillsIgnored)}** | DBNOs em bots ignorados: **${int(result.botDbnosIgnored)}**${extra}`
+      `✅ Sync limpo finalizado. Modo: **${result.gameMode}** | Partidas encontradas: **${result.foundMatches}** | Novas/reprocessadas: **${result.processedMatches}** | Já processadas/puladas: **${result.skippedMatches}** | Jogadores atualizados: **${result.updatedPlayers.length}**\n` +
+      `Kills reais: **${int(result.realKills)}** | Kills em bots ignoradas: **${int(result.botKillsIgnored)}** | DBNOs reais: **${int(result.realDbnos)}** | DBNOs em bots ignorados: **${int(result.botDbnosIgnored)}** | Dano limpo: **${num(result.cleanDamage, 0)}** | Dano em bots ignorado: **${num(result.botDamageIgnored, 0)}**${extra}`
     );
   }
 
@@ -172,7 +181,7 @@ async function handleRank(interaction) {
   const order = interaction.options.getString('ordem') || 'score';
   const limit = interaction.options.getInteger('limite') || 10;
   let tipo = interaction.options.getString('tipo') || 'oficial';
-  if (order === 'botKillsIgnored') tipo = 'limpo';
+  if (['botKillsIgnored', 'botDbnosIgnored', 'botDamageIgnored'].includes(order)) tipo = 'limpo';
   const ranking = tipo === 'limpo'
     ? await getCleanRanking(interaction.guildId, order, limit)
     : await getRanking(interaction.guildId, order, limit);
@@ -226,7 +235,7 @@ async function handleTop(interaction) {
   const category = interaction.options.getString('categoria', true);
   const limit = interaction.options.getInteger('limite') || 10;
   let tipo = interaction.options.getString('tipo') || 'oficial';
-  if (category === 'botKillsIgnored') tipo = 'limpo';
+  if (['botKillsIgnored', 'botDbnosIgnored', 'botDamageIgnored'].includes(category)) tipo = 'limpo';
   const rows = tipo === 'limpo'
     ? await getCleanTopRanking(interaction.guildId, category, limit)
     : await getTopRanking(interaction.guildId, category, limit);
@@ -262,10 +271,39 @@ async function handlePerfil(interaction) {
   const style = getPlayStyle(s);
   const embed = new EmbedBuilder()
     .setTitle(`${tipo === 'limpo' ? '🧼' : '🎖️'} Perfil PUBG — ${player.pubgNick}`)
-    .setDescription(`${user}\n**Título:** ${title}\n**Estilo de jogo:** ${style}\n**Rank:** ${getRankName(s.score)}${tipo === 'limpo' ? '\n**Filtro:** ignora kills/DBNOs/dano contra squads 200+.' : ''}`)
-    .addFields(
+    .setDescription(`${user}\n**Título:** ${title}\n**Estilo de jogo:** ${style}\n**Rank:** ${getRankName(s.score)}${tipo === 'limpo' ? '\n**Filtro:** ranking limpo por telemetry; vítima com teamId >= 200 é bot/IA e não entra nas stats reais.' : ''}`);
+
+  if (tipo === 'limpo') {
+    const official = player.stats || {};
+    embed.addFields(
+      { name: '📌 Stats oficiais', value: 'Dados da PUBG API/season, sem filtro anti-bot.', inline: false },
+      { name: 'Kills oficiais', value: int(official.kills || 0), inline: true },
+      { name: 'DBNOs oficiais', value: int(official.dbnos || 0), inline: true },
+      { name: 'Headshots oficiais', value: int(official.headshotKills || 0), inline: true },
+      { name: 'Dano oficial', value: num(official.damage || 0, 0), inline: true },
+      { name: 'Wins', value: int(official.wins || 0), inline: true },
+      { name: 'Top 10', value: int(official.top10s || 0), inline: true },
+      { name: 'Partidas', value: int(official.matchesPlayed || 0), inline: true },
+      { name: 'Longest Kill', value: `${num(official.longestKill || 0, 0)}m`, inline: true },
+      { name: 'Team Kills', value: int(official.teamKills || 0), inline: true },
+      { name: '🧼 Ranking limpo anti-bot', value: 'Somente eventos de telemetry contra players reais. Squads 200+ são ignorados.', inline: false },
+      { name: 'Kills reais', value: int(s.kills), inline: true },
+      { name: 'Kills em bots ignoradas', value: int(s.botKillsIgnored), inline: true },
+      { name: 'DBNOs reais', value: int(s.dbnos), inline: true },
+      { name: 'DBNOs em bots ignorados', value: int(s.botDbnosIgnored), inline: true },
+      { name: 'Dano limpo', value: num(s.damage, 0), inline: true },
+      { name: 'Dano em bots ignorado', value: num(s.botDamageIgnored || 0, 0), inline: true },
+      { name: 'Score limpo', value: int(s.score), inline: true },
+      { name: 'Partidas processadas pela telemetry', value: int(s.matchesPlayed), inline: true },
+      { name: 'Headshots limpos', value: int(s.headshotKills), inline: true },
+      { name: 'Revives', value: int(s.revives), inline: true },
+      { name: 'Longest Kill real', value: `${num(s.longestKill, 0)}m`, inline: true },
+      { name: 'Team Kills', value: int(s.teamKills), inline: true }
+    );
+  } else {
+    embed.addFields(
       { name: 'Score', value: int(s.score), inline: true },
-      { name: tipo === 'limpo' ? 'Kills reais' : 'Kills', value: int(s.kills), inline: true },
+      { name: 'Kills', value: int(s.kills), inline: true },
       { name: 'K/D', value: kd(s.kills, s.deaths), inline: true },
       { name: 'DBNOs', value: int(s.dbnos), inline: true },
       { name: 'Headshots', value: int(s.headshotKills), inline: true },
@@ -276,12 +314,6 @@ async function handlePerfil(interaction) {
       { name: 'Longest Kill', value: `${num(s.longestKill, 0)}m`, inline: true },
       { name: 'Partidas', value: int(s.matchesPlayed), inline: true },
       { name: 'Team Kills', value: int(s.teamKills), inline: true }
-    );
-
-  if (tipo === 'limpo') {
-    embed.addFields(
-      { name: 'Kills em bots ignoradas', value: int(s.botKillsIgnored), inline: true },
-      { name: 'DBNOs em bots ignorados', value: int(s.botDbnosIgnored), inline: true }
     );
   }
 
