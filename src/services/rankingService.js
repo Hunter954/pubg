@@ -18,21 +18,23 @@ export async function syncGuild(guildId) {
   for (const player of players) {
     try {
       const allModes = await getPlayerSeasonStats(player.pubgAccountId, seasonId, player.platform || cfg.platform);
-      const rawModeStats = allModes[cfg.gameMode] || allModes[config.pubgGameMode] || {};
+      const selectedMode = cfg.gameMode || config.pubgGameMode;
+      const rawModeStats = allModes[selectedMode] || allModes[config.pubgGameMode] || allModes['squad-fpp'] || allModes['squad'] || allModes['squad-tpp'] || {};
+      const usedMode = allModes[selectedMode] ? selectedMode : (allModes[config.pubgGameMode] ? config.pubgGameMode : (allModes['squad-fpp'] ? 'squad-fpp' : (allModes['squad'] ? 'squad' : (allModes['squad-tpp'] ? 'squad-tpp' : selectedMode))));
       const normalized = normalizeGameModeStats(rawModeStats);
       const score = calculateScore(normalized);
 
       await prisma.playerStats.upsert({
         where: { playerId: player.id },
-        update: { ...normalized, score, seasonId, gameMode: cfg.gameMode, raw: rawModeStats },
-        create: { playerId: player.id, ...normalized, score, seasonId, gameMode: cfg.gameMode, raw: rawModeStats }
+        update: { ...normalized, score, seasonId, gameMode: usedMode, raw: rawModeStats },
+        create: { playerId: player.id, ...normalized, score, seasonId, gameMode: usedMode, raw: rawModeStats }
       });
 
       await prisma.statSnapshot.create({
-        data: { playerId: player.id, ...normalized, score, seasonId, gameMode: cfg.gameMode, raw: rawModeStats }
+        data: { playerId: player.id, ...normalized, score, seasonId, gameMode: usedMode, raw: rawModeStats }
       });
 
-      results.push({ player, ok: true, score });
+      results.push({ player, ok: true, score, gameMode: usedMode });
       await new Promise((r) => setTimeout(r, 700));
     } catch (error) {
       results.push({ player, ok: false, error: error.message });

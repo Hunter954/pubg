@@ -10,32 +10,54 @@ const client = axios.create({
   }
 });
 
+function apiErrorMessage(error) {
+  const status = error?.response?.status;
+  const title = error?.response?.data?.errors?.[0]?.title;
+  if (status) return `${status}${title ? ` - ${title}` : ''}`;
+  return error?.message || 'Erro desconhecido na PUBG API';
+}
+
 export async function findPlayerByName(playerName, shard = config.pubgShard) {
-  const url = `/shards/${shard}/players`;
-  const { data } = await client.get(url, { params: { 'filter[playerNames]': playerName } });
-  const player = data?.data?.[0];
-  if (!player) return null;
-  return {
-    id: player.id,
-    name: player.attributes?.name || playerName,
-    shard
-  };
+  try {
+    const url = `/shards/${shard}/players`;
+    const { data } = await client.get(url, { params: { 'filter[playerNames]': playerName } });
+    const player = data?.data?.[0];
+    if (!player) return null;
+    return {
+      id: player.id,
+      name: player.attributes?.name || playerName,
+      shard
+    };
+  } catch (error) {
+    if (error?.response?.status === 404) return null;
+    throw new Error(`PUBG API player lookup falhou: ${apiErrorMessage(error)}`);
+  }
 }
 
 export async function listSeasons(shard = config.pubgShard) {
-  const { data } = await client.get(`/shards/${shard}/seasons`);
-  return data?.data || [];
+  try {
+    const { data } = await client.get(`/shards/${shard}/seasons`);
+    return data?.data || [];
+  } catch (error) {
+    throw new Error(`PUBG API seasons falhou: ${apiErrorMessage(error)}`);
+  }
 }
 
 export async function getCurrentSeasonId(shard = config.pubgShard) {
   const seasons = await listSeasons(shard);
-  const current = seasons.find((s) => s.attributes?.isCurrentSeason) || seasons.at(-1);
+  // A API costuma retornar a temporada mais nova no começo da lista.
+  // Se o atributo isCurrentSeason não vier marcado, usamos seasons[0], não o último item antigo.
+  const current = seasons.find((s) => s.attributes?.isCurrentSeason === true) || seasons[0];
   return current?.id;
 }
 
 export async function getPlayerSeasonStats(accountId, seasonId, shard = config.pubgShard) {
-  const { data } = await client.get(`/shards/${shard}/players/${accountId}/seasons/${seasonId}`);
-  return data?.data?.attributes?.gameModeStats || {};
+  try {
+    const { data } = await client.get(`/shards/${shard}/players/${accountId}/seasons/${seasonId}`);
+    return data?.data?.attributes?.gameModeStats || {};
+  } catch (error) {
+    throw new Error(`Stats não encontradas para season ${seasonId}: ${apiErrorMessage(error)}`);
+  }
 }
 
 export function normalizeGameModeStats(rawStats = {}) {

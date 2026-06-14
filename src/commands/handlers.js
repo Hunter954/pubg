@@ -19,7 +19,7 @@ export async function handleInteraction(interaction) {
     if (interaction.commandName === 'drop') return handleDrop(interaction);
     if (interaction.commandName === 'desafio') return handleDesafio(interaction);
   } catch (error) {
-    console.error(error);
+    console.error('[interaction:error]', { message: error.message, status: error?.response?.status, data: error?.response?.data });
     const msg = `❌ Erro: ${error.message}`;
     if (interaction.deferred || interaction.replied) await interaction.editReply(msg).catch(() => null);
     else await interaction.reply({ content: msg, ephemeral: true }).catch(() => null);
@@ -86,7 +86,15 @@ async function handleAdmin(interaction) {
       if (member) await updateMemberRankRole(interaction.guild, member, r.score);
     }
 
-    return interaction.editReply(`✅ Sync finalizado. Temporada: **${result.seasonId}** | Modo: **${result.gameMode}** | Atualizados: **${ok}** | Falhas: **${fail}**`);
+    
+    const failLines = result.results
+      .filter((r) => !r.ok)
+      .slice(0, 5)
+      .map((r) => `• ${r.player.pubgNick}: ${r.error}`)
+      .join('\n');
+
+    const extra = failLines ? `\n\n⚠️ Falhas:\n${failLines}` : '';
+    return interaction.editReply(`✅ Sync finalizado. Temporada: **${result.seasonId}** | Modo: **${result.gameMode}** | Atualizados: **${ok}** | Falhas: **${fail}**${extra}`);
   }
 
   if (sub === 'configurar-canal') {
