@@ -30,9 +30,11 @@ model Player {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  stats          PlayerStats?
-  snapshots      StatSnapshot[]
+  stats           PlayerStats?
+  cleanStats      CleanPlayerStats?
+  snapshots       StatSnapshot[]
   monthlyRankings MonthlyRanking[]
+  cleanMatchStats CleanPlayerMatchStats[]
 
   @@unique([guildId, discordId])
   @@unique([guildId, pubgAccountId])
@@ -118,4 +120,77 @@ model MonthlyRanking {
 
   @@unique([periodKey, playerId])
   @@index([guildId, periodKey])
+}
+
+
+model CleanMatch {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  matchId     String
+  mapName     String?
+  gameMode    String?
+  playedAt    DateTime?
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  playerStats CleanPlayerMatchStats[]
+
+  @@unique([guildId, matchId])
+  @@index([guildId, playedAt])
+}
+
+model CleanPlayerMatchStats {
+  id               Int        @id @default(autoincrement())
+  cleanMatchId     Int
+  cleanMatch       CleanMatch @relation(fields: [cleanMatchId], references: [id], onDelete: Cascade)
+  playerId         Int
+  player           Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  score            Int      @default(0)
+  kills            Int      @default(0)
+  botKillsIgnored  Int      @default(0)
+  assists          Int      @default(0)
+  damage           Float    @default(0)
+  wins             Int      @default(0)
+  top10s           Int      @default(0)
+  revives          Int      @default(0)
+  longestKill      Float    @default(0)
+  matchesPlayed    Int      @default(0)
+  deaths           Int      @default(0)
+  teamKills        Int      @default(0)
+  headshotKills    Int      @default(0)
+  dbnos            Int      @default(0)
+  botDbnosIgnored  Int      @default(0)
+  placement        Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([cleanMatchId, playerId])
+  @@index([playerId])
+}
+
+model CleanPlayerStats {
+  id               Int      @id @default(autoincrement())
+  playerId         Int      @unique
+  player           Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  seasonId         String?
+  gameMode         String   @default("squad")
+
+  score            Int      @default(0)
+  kills            Int      @default(0)
+  botKillsIgnored  Int      @default(0)
+  assists          Int      @default(0)
+  damage           Float    @default(0)
+  wins             Int      @default(0)
+  top10s           Int      @default(0)
+  revives          Int      @default(0)
+  longestKill      Float    @default(0)
+  matchesPlayed    Int      @default(0)
+  deaths           Int      @default(0)
+  teamKills        Int      @default(0)
+  headshotKills    Int      @default(0)
+  dbnos            Int      @default(0)
+  botDbnosIgnored  Int      @default(0)
+
+  updatedAt        DateTime @updatedAt
 }

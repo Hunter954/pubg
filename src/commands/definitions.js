@@ -15,7 +15,9 @@ export const commands = [
     .addSubcommand((s) => s.setName('listar')
       .setDescription('Lista jogadores cadastrados'))
     .addSubcommand((s) => s.setName('sync')
-      .setDescription('Sincroniza stats dos jogadores com a PUBG API'))
+      .setDescription('Sincroniza stats oficiais dos jogadores com a PUBG API'))
+    .addSubcommand((s) => s.setName('sync-limpo')
+      .setDescription('Sincroniza ranking limpo por telemetry, ignorando kills/DBNOs em squads 200+'))
     .addSubcommand((s) => s.setName('configurar-canal')
       .setDescription('Define o canal onde o bot postará ranking')
       .addChannelOption((o) => o.setName('canal').setDescription('Canal de ranking').addChannelTypes(ChannelType.GuildText).setRequired(true)))
@@ -46,14 +48,23 @@ export const commands = [
       { name: 'Wins', value: 'wins' },
       { name: 'Assists', value: 'assists' },
       { name: 'Revives', value: 'revives' },
-      { name: 'Longest Kill', value: 'longestKill' }
+      { name: 'Longest Kill', value: 'longestKill' },
+      { name: 'Bots ignorados', value: 'botKillsIgnored' }
+    ))
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
+      { name: 'Oficial', value: 'oficial' },
+      { name: 'Limpo / sem bots', value: 'limpo' }
     ))
     .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
 
   new SlashCommandBuilder()
     .setName('perfil')
     .setDescription('Mostra o perfil PUBG de um jogador')
-    .addUserOption((o) => o.setName('usuario').setDescription('Usuário do Discord')),
+    .addUserOption((o) => o.setName('usuario').setDescription('Usuário do Discord'))
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de estatística').addChoices(
+      { name: 'Oficial', value: 'oficial' },
+      { name: 'Limpo / sem bots', value: 'limpo' }
+    )),
 
 
   new SlashCommandBuilder()
@@ -84,7 +95,12 @@ export const commands = [
       { name: 'Revives', value: 'revives' },
       { name: 'DBNOs / Knocks', value: 'dbnos' },
       { name: 'Longest Kill', value: 'longestKill' },
-      { name: 'Team Kills', value: 'teamKills' }
+      { name: 'Team Kills', value: 'teamKills' },
+      { name: 'Bots ignorados', value: 'botKillsIgnored' }
+    ))
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
+      { name: 'Oficial', value: 'oficial' },
+      { name: 'Limpo / sem bots', value: 'limpo' }
     ))
     .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
 

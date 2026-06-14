@@ -9,6 +9,7 @@ import { getRankName, getPlayerTitle, getPlayStyle } from '../utils/score.js';
 import { int, num, kd } from '../utils/format.js';
 import { closeMonthlyRanking, getMonthlyRanking, listMonthlyHistory, parsePeriodKey, previousPeriodKey } from '../services/monthlyRankingService.js';
 import { getLatestSquadTimeline } from '../services/timelineService.js';
+import { syncCleanGuild, getCleanRanking, getCleanTopRanking, getCleanPlayerStatsByDiscord } from '../services/cleanRankingService.js';
 
 const CATEGORY_LABELS = {
   score: 'Score',
@@ -22,7 +23,9 @@ const CATEGORY_LABELS = {
   deaths: 'Mortes',
   teamKills: 'Team Kills',
   headshotKills: 'Headshots',
-  dbnos: 'DBNOs / Knocks'
+  dbnos: 'DBNOs / Knocks',
+  botKillsIgnored: 'Bots ignorados',
+  botDbnosIgnored: 'DBNOs em bots ignorados'
 };
 
 function statValue(row, field) {
@@ -123,6 +126,19 @@ async function handleAdmin(interaction) {
     return interaction.editReply(`✅ Sync finalizado. Temporada: **${result.seasonId}** | Modo: **${result.gameMode}** | Atualizados: **${ok}** | Falhas: **${fail}**${extra}`);
   }
 
+  if (sub === 'sync-limpo') {
+    await interaction.deferReply();
+    const result = await syncCleanGuild(guildId);
+    const failLines = result.errors
+      .slice(0, 5)
+      .map((r) => `• Match ${r.matchId}: ${r.error}`)
+      .join('\n');
+    const extra = failLines ? `\n\n⚠️ Falhas:\n${failLines}` : '';
+    return interaction.editReply(
+      `✅ Sync limpo finalizado. Modo: **${result.gameMode}** | Partidas processadas: **${result.processedMatches}** | Puladas: **${result.skippedMatches}** | Jogadores atualizados: **${result.updatedPlayers.length}** | Kills em bots ignoradas: **${int(result.botKillsIgnored)}** | DBNOs em bots ignorados: **${int(result.botDbnosIgnored)}**${extra}`
+    );
+  }
+
   if (sub === 'configurar-canal') {
     const channel = interaction.options.getChannel('canal', true);
     await prisma.guildConfig.upsert({
@@ -155,18 +171,27 @@ async function handleAdmin(interaction) {
 async function handleRank(interaction) {
   const order = interaction.options.getString('ordem') || 'score';
   const limit = interaction.options.getInteger('limite') || 10;
-  const ranking = await getRanking(interaction.guildId, order, limit);
-  if (!ranking.length) return interaction.reply('Nenhum ranking ainda. Peça para um admin usar `/admin cadastrar` e depois `/admin sync`.');
+  let tipo = interaction.options.getString('tipo') || 'oficial';
+  if (order === 'botKillsIgnored') tipo = 'limpo';
+  const ranking = tipo === 'limpo'
+    ? await getCleanRanking(interaction.guildId, order, limit)
+    : await getRanking(interaction.guildId, order, limit);
+  if (!ranking.length) {
+    return interaction.reply(tipo === 'limpo'
+      ? 'Nenhum ranking limpo ainda. Peça para um admin usar `/admin sync-limpo`.'
+      : 'Nenhum ranking ainda. Peça para um admin usar `/admin cadastrar` e depois `/admin sync`.');
+  }
 
   const lines = ranking.map((row, i) => {
     const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
-    return `${medal} <@${row.player.discordId}> — **${int(row.score)} pts** | ${CATEGORY_LABELS[order] || order}: **${statValue(row, order)}**`;
+    const botInfo = tipo === 'limpo' ? ` | Bots ignorados: **${int(row.botKillsIgnored || 0)}**` : '';
+    return `${medal} <@${row.player.discordId}> — **${int(row.score)} pts** | ${CATEGORY_LABELS[order] || order}: **${statValue(row, order)}**${botInfo}`;
   });
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 Ranking Geral PUBG')
+    .setTitle(tipo === 'limpo' ? '🧼 Ranking Limpo PUBG — sem squads 200+' : '🏆 Ranking Geral PUBG')
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Use /ranking para ver o ranking mensal e histórico.' })
+    .setFooter({ text: tipo === 'limpo' ? 'Ranking calculado pela telemetry. Ignora kills/DBNOs/dano em vítimas com teamId >= 200.' : 'Use /ranking para ver o ranking mensal e histórico.' })
     .setTimestamp();
   return interaction.reply({ embeds: [embed] });
 }
@@ -200,8 +225,12 @@ async function handleMonthlyRanking(interaction) {
 async function handleTop(interaction) {
   const category = interaction.options.getString('categoria', true);
   const limit = interaction.options.getInteger('limite') || 10;
-  const rows = await getTopRanking(interaction.guildId, category, limit);
-  if (!rows.length) return interaction.reply('Ainda não existe ranking. Rode `/admin sync` primeiro.');
+  let tipo = interaction.options.getString('tipo') || 'oficial';
+  if (category === 'botKillsIgnored') tipo = 'limpo';
+  const rows = tipo === 'limpo'
+    ? await getCleanTopRanking(interaction.guildId, category, limit)
+    : await getTopRanking(interaction.guildId, category, limit);
+  if (!rows.length) return interaction.reply(tipo === 'limpo' ? 'Ainda não existe ranking limpo. Rode `/admin sync-limpo` primeiro.' : 'Ainda não existe ranking. Rode `/admin sync` primeiro.');
 
   const lines = rows.map((row, i) => {
     const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
@@ -209,9 +238,9 @@ async function handleTop(interaction) {
   });
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 Top ${CATEGORY_LABELS[category] || category}`)
+    .setTitle(`${tipo === 'limpo' ? '🧼' : '📊'} Top ${CATEGORY_LABELS[category] || category}${tipo === 'limpo' ? ' — Limpo' : ''}`)
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Dados acumulados da temporada/modo configurado.' })
+    .setFooter({ text: tipo === 'limpo' ? 'Dados por telemetry, ignorando squads 200+ como bots.' : 'Dados acumulados da temporada/modo configurado.' })
     .setTimestamp();
 
   return interaction.reply({ embeds: [embed] });
@@ -219,19 +248,24 @@ async function handleTop(interaction) {
 
 async function handlePerfil(interaction) {
   const user = interaction.options.getUser('usuario') || interaction.user;
-  const player = await getPlayerStatsByDiscord(interaction.guildId, user.id);
+  const tipo = interaction.options.getString('tipo') || 'oficial';
+  const player = tipo === 'limpo'
+    ? await getCleanPlayerStatsByDiscord(interaction.guildId, user.id)
+    : await getPlayerStatsByDiscord(interaction.guildId, user.id);
   if (!player) return interaction.reply(`❌ ${user} não está cadastrado no ranking.`);
-  const s = player.stats;
-  if (!s) return interaction.reply(`⚠️ ${user} está cadastrado, mas ainda não tem stats. Peça para um admin usar /admin sync.`);
+  const s = tipo === 'limpo' ? player.cleanStats : player.stats;
+  if (!s) return interaction.reply(tipo === 'limpo'
+    ? `⚠️ ${user} está cadastrado, mas ainda não tem stats limpas. Peça para um admin usar /admin sync-limpo.`
+    : `⚠️ ${user} está cadastrado, mas ainda não tem stats. Peça para um admin usar /admin sync.`);
 
   const title = getPlayerTitle(s);
   const style = getPlayStyle(s);
   const embed = new EmbedBuilder()
-    .setTitle(`🎖️ Perfil PUBG — ${player.pubgNick}`)
-    .setDescription(`${user}\n**Título:** ${title}\n**Estilo de jogo:** ${style}\n**Rank:** ${getRankName(s.score)}`)
+    .setTitle(`${tipo === 'limpo' ? '🧼' : '🎖️'} Perfil PUBG — ${player.pubgNick}`)
+    .setDescription(`${user}\n**Título:** ${title}\n**Estilo de jogo:** ${style}\n**Rank:** ${getRankName(s.score)}${tipo === 'limpo' ? '\n**Filtro:** ignora kills/DBNOs/dano contra squads 200+.' : ''}`)
     .addFields(
       { name: 'Score', value: int(s.score), inline: true },
-      { name: 'Kills', value: int(s.kills), inline: true },
+      { name: tipo === 'limpo' ? 'Kills reais' : 'Kills', value: int(s.kills), inline: true },
       { name: 'K/D', value: kd(s.kills, s.deaths), inline: true },
       { name: 'DBNOs', value: int(s.dbnos), inline: true },
       { name: 'Headshots', value: int(s.headshotKills), inline: true },
@@ -242,8 +276,17 @@ async function handlePerfil(interaction) {
       { name: 'Longest Kill', value: `${num(s.longestKill, 0)}m`, inline: true },
       { name: 'Partidas', value: int(s.matchesPlayed), inline: true },
       { name: 'Team Kills', value: int(s.teamKills), inline: true }
-    )
-    .setFooter({ text: `Modo: ${s.gameMode} | Season: ${s.seasonId || 'N/A'}` })
+    );
+
+  if (tipo === 'limpo') {
+    embed.addFields(
+      { name: 'Kills em bots ignoradas', value: int(s.botKillsIgnored), inline: true },
+      { name: 'DBNOs em bots ignorados', value: int(s.botDbnosIgnored), inline: true }
+    );
+  }
+
+  embed
+    .setFooter({ text: `Modo: ${s.gameMode} | Season: ${s.seasonId || 'N/A'}${tipo === 'limpo' ? ' | Ranking limpo por telemetry' : ''}` })
     .setTimestamp(s.updatedAt);
   return interaction.reply({ embeds: [embed] });
 }
