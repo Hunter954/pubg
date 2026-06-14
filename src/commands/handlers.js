@@ -1,4 +1,6 @@
 import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../db.js';
 import { findPlayerByName } from '../services/pubgApi.js';
 import { syncGuild, getRanking, getPlayerStatsByDiscord, getMvp, getTopRanking, getPlayerEvolution } from '../services/rankingService.js';
@@ -69,7 +71,7 @@ const SECRET_KEY_ROOMS = {
 };
 
 function secretKeyAssetPath(fileName) {
-  return new URL(`../assets/secret-keys/${fileName}`, import.meta.url);
+  return fileURLToPath(new URL(`../assets/secret-keys/${fileName}`, import.meta.url));
 }
 
 function statValue(row, field) {
@@ -449,18 +451,44 @@ async function handleChave(interaction) {
     return interaction.reply({ content: '❌ Mapa inválido para /chave.', ephemeral: true });
   }
 
-  const files = rooms.map((room) => new AttachmentBuilder(secretKeyAssetPath(room.file), { name: room.file }));
-  const description = selected === 'todos'
-    ? rooms.map((room) => `• **${room.label}**`).join('\n')
-    : `Mapa: **${rooms[0].label}**`;
+  await interaction.deferReply();
+
+  const attachments = [];
+  const missingFiles = [];
+
+  for (const room of rooms) {
+    const filePath = secretKeyAssetPath(room.file);
+    if (!existsSync(filePath)) {
+      missingFiles.push(`${room.label}: ${room.file}`);
+      console.warn('[chave:missing-file]', { map: room.label, file: room.file, path: filePath });
+      continue;
+    }
+
+    attachments.push(new AttachmentBuilder(filePath, { name: room.file }));
+  }
+
+  if (!attachments.length) {
+    return interaction.editReply(`❌ Não encontrei as imagens do /chave no servidor. Arquivos ausentes:\n${missingFiles.map((item) => `• ${item}`).join('\n')}`);
+  }
+
+  const descriptionParts = [];
+  if (selected === 'todos') {
+    descriptionParts.push(rooms.map((room) => `• **${room.label}**`).join('\n'));
+  } else {
+    descriptionParts.push(`Mapa: **${rooms[0].label}**`);
+  }
+
+  if (missingFiles.length) {
+    descriptionParts.push(`⚠️ Alguns arquivos não foram encontrados:\n${missingFiles.map((item) => `• ${item}`).join('\n')}`);
+  }
 
   const embed = new EmbedBuilder()
     .setTitle(selected === 'todos' ? '🗝️ Chaves / Salas secretas PUBG' : rooms[0].title)
-    .setDescription(description)
+    .setDescription(descriptionParts.join('\n\n'))
     .setFooter({ text: 'Imagens salvas localmente no bot.' })
     .setTimestamp();
 
-  return interaction.reply({ embeds: [embed], files });
+  return interaction.editReply({ embeds: [embed], files: attachments });
 }
 
 async function handleDesafio(interaction) {
