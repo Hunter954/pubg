@@ -1,0 +1,27 @@
+CREATE TABLE IF NOT EXISTS "MonthlyRanking" (
+  "id" SERIAL PRIMARY KEY,
+  "guildId" TEXT NOT NULL,
+  "periodKey" TEXT NOT NULL,
+  "year" INTEGER NOT NULL,
+  "month" INTEGER NOT NULL,
+  "playerId" INTEGER NOT NULL REFERENCES "Player"("id") ON DELETE CASCADE,
+  "position" INTEGER NOT NULL,
+  "score" INTEGER NOT NULL DEFAULT 0,
+  "kills" INTEGER NOT NULL DEFAULT 0,
+  "assists" INTEGER NOT NULL DEFAULT 0,
+  "damage" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "wins" INTEGER NOT NULL DEFAULT 0,
+  "top10s" INTEGER NOT NULL DEFAULT 0,
+  "revives" INTEGER NOT NULL DEFAULT 0,
+  "longestKill" DOUBLE PRECISION NOT NULL DEFAULT 0,
+  "matchesPlayed" INTEGER NOT NULL DEFAULT 0,
+  "deaths" INTEGER NOT NULL DEFAULT 0,
+  "teamKills" INTEGER NOT NULL DEFAULT 0,
+  "headshotKills" INTEGER NOT NULL DEFAULT 0,
+  "dbnos" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "MonthlyRanking_periodKey_playerId_key" ON "MonthlyRanking"("periodKey", "playerId");
+CREATE INDEX IF NOT EXISTS "MonthlyRanking_guildId_periodKey_idx" ON "MonthlyRanking"("guildId", "periodKey");

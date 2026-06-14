@@ -32,6 +32,7 @@ model Player {
 
   stats          PlayerStats?
   snapshots      StatSnapshot[]
+  monthlyRankings MonthlyRanking[]
 
   @@unique([guildId, discordId])
   @@unique([guildId, pubgAccountId])
@@ -86,4 +87,35 @@ model StatSnapshot {
   createdAt      DateTime @default(now())
 
   @@index([playerId, createdAt])
+}
+
+model MonthlyRanking {
+  id             Int      @id @default(autoincrement())
+  guildId        String
+  periodKey      String
+  year           Int
+  month          Int
+  playerId       Int
+  player         Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  position       Int
+
+  score          Int      @default(0)
+  kills          Int      @default(0)
+  assists        Int      @default(0)
+  damage         Float    @default(0)
+  wins           Int      @default(0)
+  top10s         Int      @default(0)
+  revives        Int      @default(0)
+  longestKill    Float    @default(0)
+  matchesPlayed  Int      @default(0)
+  deaths         Int      @default(0)
+  teamKills      Int      @default(0)
+  headshotKills  Int      @default(0)
+  dbnos          Int      @default(0)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([periodKey, playerId])
+  @@index([guildId, periodKey])
 }

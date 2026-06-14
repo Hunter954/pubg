@@ -28,7 +28,13 @@ export const commands = [
         { name: 'Duo TPP', value: 'duo' },
         { name: 'Solo FPP', value: 'solo-fpp' },
         { name: 'Solo TPP', value: 'solo' }
-      ))),
+      )))
+    .addSubcommand((s) => s.setName('fechar-mes')
+      .setDescription('Fecha e salva o ranking de um mês')
+      .addStringOption((o) => o.setName('periodo').setDescription('Ex: 2026-07 ou julho. Vazio fecha mês anterior.')))
+    .addSubcommand((s) => s.setName('recalcular-mes')
+      .setDescription('Recalcula e sobrescreve o ranking mensal salvo')
+      .addStringOption((o) => o.setName('periodo').setDescription('Ex: 2026-07 ou julho').setRequired(true))),
 
   new SlashCommandBuilder()
     .setName('rank')
@@ -49,6 +55,50 @@ export const commands = [
     .setDescription('Mostra o perfil PUBG de um jogador')
     .addUserOption((o) => o.setName('usuario').setDescription('Usuário do Discord')),
 
+
+  new SlashCommandBuilder()
+    .setName('ranking')
+    .setDescription('Mostra ranking mensal atual ou histórico')
+    .addStringOption((o) => o.setName('periodo').setDescription('Ex: julho ou 2026-07. Vazio mostra o mês atual.'))
+    .addStringOption((o) => o.setName('categoria').setDescription('Categoria').addChoices(
+      { name: 'Score', value: 'score' },
+      { name: 'Kills', value: 'kills' },
+      { name: 'Dano', value: 'damage' },
+      { name: 'Wins', value: 'wins' },
+      { name: 'Headshots', value: 'headshotKills' },
+      { name: 'Revives', value: 'revives' },
+      { name: 'DBNOs / Knocks', value: 'dbnos' },
+      { name: 'Longest Kill', value: 'longestKill' },
+      { name: 'Team Kills', value: 'teamKills' }
+    ))
+    .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
+
+  new SlashCommandBuilder()
+    .setName('top')
+    .setDescription('Ranking por categoria')
+    .addStringOption((o) => o.setName('categoria').setDescription('Categoria').setRequired(true).addChoices(
+      { name: 'Kills', value: 'kills' },
+      { name: 'Dano', value: 'damage' },
+      { name: 'Wins', value: 'wins' },
+      { name: 'Headshots', value: 'headshotKills' },
+      { name: 'Revives', value: 'revives' },
+      { name: 'DBNOs / Knocks', value: 'dbnos' },
+      { name: 'Longest Kill', value: 'longestKill' },
+      { name: 'Team Kills', value: 'teamKills' }
+    ))
+    .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
+
+  new SlashCommandBuilder()
+    .setName('evolucao')
+    .setDescription('Mostra evolução do jogador nos últimos dias')
+    .addUserOption((o) => o.setName('usuario').setDescription('Usuário do Discord'))
+    .addIntegerOption((o) => o.setName('dias').setDescription('Quantidade de dias. Padrão: 7')),
+
+  new SlashCommandBuilder()
+    .setName('timeline')
+    .setDescription('Mostra uma timeline da última partida recente do squad')
+    .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de eventos, até 25')),
+
   new SlashCommandBuilder()
     .setName('mvp')
     .setDescription('Mostra o MVP atual do servidor'),
@@ -63,11 +113,6 @@ export const commands = [
       { name: 'Vikendi', value: 'vikendi' },
       { name: 'Sanhok', value: 'sanhok' }
     )),
-
-
-  new SlashCommandBuilder()
-    .setName('chave')
-    .setDescription('Mostra o mapa das chaves secretas / salas secretas do PUBG'),
 
   new SlashCommandBuilder()
     .setName('desafio')

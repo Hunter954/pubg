@@ -1,108 +1,49 @@
-import { ActionRowBuilder, AttachmentBuilder, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
-import { fileURLToPath } from 'node:url';
+import { EmbedBuilder } from 'discord.js';
 import { prisma } from '../db.js';
 import { findPlayerByName } from '../services/pubgApi.js';
-import { syncGuild, getRanking, getPlayerStatsByDiscord, getMvp } from '../services/rankingService.js';
+import { syncGuild, getRanking, getPlayerStatsByDiscord, getMvp, getTopRanking, getPlayerEvolution } from '../services/rankingService.js';
 import { ensureGuildConfig } from '../services/guildConfigService.js';
 import { updateMemberRankRole } from '../services/roleService.js';
 import { requireAdmin } from '../utils/permissions.js';
-import { getRankName } from '../utils/score.js';
+import { getRankName, getPlayerTitle, getPlayStyle } from '../utils/score.js';
 import { int, num, kd } from '../utils/format.js';
+import { closeMonthlyRanking, getMonthlyRanking, listMonthlyHistory, parsePeriodKey, previousPeriodKey } from '../services/monthlyRankingService.js';
+import { getLatestSquadTimeline } from '../services/timelineService.js';
 
-
-const SECRET_KEY_SELECT_ID = 'pubg_secret_key_map_select';
-
-const SECRET_KEY_MAPS = {
-  erangel: {
-    label: 'Erangel',
-    title: '🗝️ Erangel — Salas Secretas / Chaves',
-    description: 'Mapa com posições de salas/chaves secretas em Erangel.',
-    fileName: 'erangel-secret-rooms.jpg'
-  },
-  miramar: {
-    label: 'Miramar',
-    title: '🗝️ Miramar — Salas Secretas / Chaves',
-    description: 'Mapa com posições de salas/chaves secretas em Miramar.',
-    fileName: 'miramar-secret-rooms.jpg'
-  },
-  rondo: {
-    label: 'Rondo',
-    title: '🗝️ Rondo — Salas Secretas / Chaves',
-    description: 'Mapa com posições de salas/chaves secretas em Rondo.',
-    fileName: 'rondo-secret-rooms.jpg'
-  },
-  paramo: {
-    label: 'Paramo',
-    title: '🗝️ Paramo — Salas Secretas / Chaves',
-    description: 'Mapa com posições de salas/chaves secretas em Paramo.',
-    fileName: 'paramo-secret-rooms.jpg'
-  },
-  deston: {
-    label: 'Deston',
-    title: '🗝️ Deston — Security Key Card / Security Rooms',
-    description: 'Mapa com posições de cartões, salas e caminhões de segurança em Deston.',
-    fileName: 'deston-security-keycard.jpg'
-  },
-  taego: {
-    label: 'Taego',
-    title: '🗝️ Taego — Salas Secretas',
-    description: 'Mapa com posições de salas secretas em Taego.',
-    fileName: 'taego-secret-rooms.jpg'
-  },
-  vikendi: {
-    label: 'Vikendi',
-    title: '🗝️ Vikendi — Secret Key / Salas Secretas',
-    description: 'Mapa com posições de chaves e salas secretas em Vikendi.',
-    fileName: 'vikendi-secret-key-locations.jpg'
-  }
+const CATEGORY_LABELS = {
+  score: 'Score',
+  kills: 'Kills',
+  damage: 'Dano',
+  wins: 'Wins',
+  assists: 'Assists',
+  revives: 'Revives',
+  longestKill: 'Longest Kill',
+  matchesPlayed: 'Partidas',
+  deaths: 'Mortes',
+  teamKills: 'Team Kills',
+  headshotKills: 'Headshots',
+  dbnos: 'DBNOs / Knocks'
 };
 
-function buildSecretKeySelectRow(selectedValue = null) {
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(SECRET_KEY_SELECT_ID)
-      .setPlaceholder('Selecione o mapa')
-      .addOptions(Object.entries(SECRET_KEY_MAPS).map(([value, map]) => ({
-        label: map.label,
-        value,
-        description: map.description.slice(0, 100),
-        default: value === selectedValue
-      })))
-  );
-}
-
-function buildSecretKeyMapPayload(mapValue) {
-  const map = SECRET_KEY_MAPS[mapValue] || SECRET_KEY_MAPS.erangel;
-  const imageUrl = new URL(`../assets/secret-keys/${map.fileName}`, import.meta.url);
-  const attachment = new AttachmentBuilder(fileURLToPath(imageUrl), { name: map.fileName });
-  const embed = new EmbedBuilder()
-    .setTitle(map.title)
-    .setDescription(`${map.description}\n\nUse o seletor abaixo para trocar de mapa.`)
-    .setImage(`attachment://${map.fileName}`)
-    .setFooter({ text: 'PUBG Ranking Bot • mapas de referência enviados pela comunidade' })
-    .setTimestamp();
-
-  return {
-    embeds: [embed],
-    components: [buildSecretKeySelectRow(mapValue)],
-    files: [attachment]
-  };
+function statValue(row, field) {
+  if (field === 'damage') return num(row[field], 0);
+  if (field === 'longestKill') return `${num(row[field], 0)}m`;
+  return int(row[field]);
 }
 
 export async function handleInteraction(interaction) {
+  if (!interaction.isChatInputCommand()) return;
+
   try {
-    if (interaction.isStringSelectMenu() && interaction.customId === SECRET_KEY_SELECT_ID) {
-      return handleChaveSelect(interaction);
-    }
-
-    if (!interaction.isChatInputCommand()) return;
-
     if (interaction.commandName === 'admin') return handleAdmin(interaction);
     if (interaction.commandName === 'rank') return handleRank(interaction);
+    if (interaction.commandName === 'ranking') return handleMonthlyRanking(interaction);
+    if (interaction.commandName === 'top') return handleTop(interaction);
     if (interaction.commandName === 'perfil') return handlePerfil(interaction);
+    if (interaction.commandName === 'evolucao') return handleEvolucao(interaction);
+    if (interaction.commandName === 'timeline') return handleTimeline(interaction);
     if (interaction.commandName === 'mvp') return handleMvp(interaction);
     if (interaction.commandName === 'drop') return handleDrop(interaction);
-    if (interaction.commandName === 'chave') return handleChave(interaction);
     if (interaction.commandName === 'desafio') return handleDesafio(interaction);
   } catch (error) {
     console.error('[interaction:error]', { message: error.message, status: error?.response?.status, data: error?.response?.data });
@@ -172,7 +113,6 @@ async function handleAdmin(interaction) {
       if (member) await updateMemberRankRole(interaction.guild, member, r.score);
     }
 
-    
     const failLines = result.results
       .filter((r) => !r.ok)
       .slice(0, 5)
@@ -202,6 +142,14 @@ async function handleAdmin(interaction) {
     });
     return interaction.reply({ content: `✅ Modo padrão configurado: **${mode}**`, ephemeral: true });
   }
+
+  if (sub === 'fechar-mes' || sub === 'recalcular-mes') {
+    await interaction.deferReply({ ephemeral: true });
+    const rawPeriod = interaction.options.getString('periodo');
+    const periodKey = rawPeriod ? parsePeriodKey(rawPeriod) : previousPeriodKey();
+    const result = await closeMonthlyRanking(guildId, periodKey);
+    return interaction.editReply(`✅ Ranking de **${result.label}** salvo/recalculado com **${result.rows.length}** jogadores.`);
+  }
 }
 
 async function handleRank(interaction) {
@@ -212,15 +160,60 @@ async function handleRank(interaction) {
 
   const lines = ranking.map((row, i) => {
     const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
-    const stat = order === 'damage' || order === 'longestKill' ? num(row[order]) : int(row[order]);
-    return `${medal} <@${row.player.discordId}> — **${int(row.score)} pts** | ${order}: **${stat}**`;
+    return `${medal} <@${row.player.discordId}> — **${int(row.score)} pts** | ${CATEGORY_LABELS[order] || order}: **${statValue(row, order)}**`;
   });
 
   const embed = new EmbedBuilder()
-    .setTitle('🏆 Ranking Interno PUBG')
+    .setTitle('🏆 Ranking Geral PUBG')
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Use /admin sync para atualizar os dados.' })
+    .setFooter({ text: 'Use /ranking para ver o ranking mensal e histórico.' })
     .setTimestamp();
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function handleMonthlyRanking(interaction) {
+  const period = interaction.options.getString('periodo');
+  const category = interaction.options.getString('categoria') || 'score';
+  const limit = interaction.options.getInteger('limite') || 10;
+  const result = await getMonthlyRanking(interaction.guildId, period, category, limit);
+
+  if (!result.rows.length) {
+    const history = await listMonthlyHistory(interaction.guildId);
+    const hint = history.length ? `\n\nHistóricos salvos:\n${history.slice(0, 8).map((h) => `• ${h.periodKey} — ${h.label}`).join('\n')}` : '';
+    return interaction.reply(`⚠️ Ainda não existe ranking para **${result.label}**. O ranking mensal precisa de pelo menos 2 snapshots no mês.${hint}`);
+  }
+
+  const lines = result.rows.map((row, i) => {
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    return `${medal} <@${row.player.discordId}> — **${int(row.score)} pts** | ${CATEGORY_LABELS[category] || category}: **${statValue(row, category)}**`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🏆 Ranking Mensal — ${result.label}`)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: result.closed ? 'Ranking fechado e salvo.' : 'Ranking em andamento desde o dia 1º às 00:00.' })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function handleTop(interaction) {
+  const category = interaction.options.getString('categoria', true);
+  const limit = interaction.options.getInteger('limite') || 10;
+  const rows = await getTopRanking(interaction.guildId, category, limit);
+  if (!rows.length) return interaction.reply('Ainda não existe ranking. Rode `/admin sync` primeiro.');
+
+  const lines = rows.map((row, i) => {
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    return `${medal} <@${row.player.discordId}> — **${statValue(row, category)}** | ${row.player.pubgNick}`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📊 Top ${CATEGORY_LABELS[category] || category}`)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'Dados acumulados da temporada/modo configurado.' })
+    .setTimestamp();
+
   return interaction.reply({ embeds: [embed] });
 }
 
@@ -231,23 +224,75 @@ async function handlePerfil(interaction) {
   const s = player.stats;
   if (!s) return interaction.reply(`⚠️ ${user} está cadastrado, mas ainda não tem stats. Peça para um admin usar /admin sync.`);
 
+  const title = getPlayerTitle(s);
+  const style = getPlayStyle(s);
   const embed = new EmbedBuilder()
     .setTitle(`🎖️ Perfil PUBG — ${player.pubgNick}`)
-    .setDescription(`${user}\n${getRankName(s.score)}`)
+    .setDescription(`${user}\n**Título:** ${title}\n**Estilo de jogo:** ${style}\n**Rank:** ${getRankName(s.score)}`)
     .addFields(
       { name: 'Score', value: int(s.score), inline: true },
       { name: 'Kills', value: int(s.kills), inline: true },
       { name: 'K/D', value: kd(s.kills, s.deaths), inline: true },
-      { name: 'Dano', value: num(s.damage), inline: true },
+      { name: 'DBNOs', value: int(s.dbnos), inline: true },
+      { name: 'Headshots', value: int(s.headshotKills), inline: true },
+      { name: 'Dano', value: num(s.damage, 0), inline: true },
       { name: 'Wins', value: int(s.wins), inline: true },
       { name: 'Top 10', value: int(s.top10s), inline: true },
-      { name: 'Assists', value: int(s.assists), inline: true },
       { name: 'Revives', value: int(s.revives), inline: true },
-      { name: 'Longest Kill', value: `${num(s.longestKill)}m`, inline: true }
+      { name: 'Longest Kill', value: `${num(s.longestKill, 0)}m`, inline: true },
+      { name: 'Partidas', value: int(s.matchesPlayed), inline: true },
+      { name: 'Team Kills', value: int(s.teamKills), inline: true }
     )
     .setFooter({ text: `Modo: ${s.gameMode} | Season: ${s.seasonId || 'N/A'}` })
     .setTimestamp(s.updatedAt);
   return interaction.reply({ embeds: [embed] });
+}
+
+async function handleEvolucao(interaction) {
+  const user = interaction.options.getUser('usuario') || interaction.user;
+  const days = interaction.options.getInteger('dias') || 7;
+  const result = await getPlayerEvolution(interaction.guildId, user.id, days);
+  if (!result) return interaction.reply(`❌ ${user} não está cadastrado no ranking.`);
+  if (!result.delta) return interaction.reply(`⚠️ Ainda não tenho snapshots suficientes para calcular a evolução de ${user}. Rode /admin sync mais de uma vez.`);
+
+  const d = result.delta;
+  const embed = new EmbedBuilder()
+    .setTitle(`📈 Evolução — ${result.player.pubgNick}`)
+    .setDescription(`${user}\nÚltimos **${days} dias**`)
+    .addFields(
+      { name: 'Score', value: `+${int(d.score)}`, inline: true },
+      { name: 'Kills', value: `+${int(d.kills)}`, inline: true },
+      { name: 'Dano', value: `+${num(d.damage, 0)}`, inline: true },
+      { name: 'Wins', value: `+${int(d.wins)}`, inline: true },
+      { name: 'Headshots', value: `+${int(d.headshotKills)}`, inline: true },
+      { name: 'DBNOs', value: `+${int(d.dbnos)}`, inline: true },
+      { name: 'Revives', value: `+${int(d.revives)}`, inline: true },
+      { name: 'Partidas', value: `+${int(d.matchesPlayed)}`, inline: true },
+      { name: 'Longest novo', value: d.longestKill ? `${num(d.longestKill, 0)}m` : '—', inline: true }
+    )
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed] });
+}
+
+async function handleTimeline(interaction) {
+  await interaction.deferReply();
+  const limit = Math.min(Math.max(interaction.options.getInteger('limite') || 15, 3), 25);
+  const result = await getLatestSquadTimeline(interaction.guildId, limit);
+  if (!result.lines.length) return interaction.editReply('⚠️ Encontrei a partida, mas não achei eventos relevantes dos jogadores cadastrados na telemetry.');
+
+  const embed = new EmbedBuilder()
+    .setTitle('☠️ Timeline da Partida Recente')
+    .setDescription(result.lines.join('\n').slice(0, 3900))
+    .addFields(
+      { name: 'Mapa', value: result.mapName, inline: true },
+      { name: 'Modo', value: result.gameMode, inline: true },
+      { name: 'Jogadores cadastrados', value: int(result.registeredPlayersInMatch), inline: true }
+    )
+    .setFooter({ text: `Match: ${result.matchId}` })
+    .setTimestamp();
+
+  return interaction.editReply({ embeds: [embed] });
 }
 
 async function handleMvp(interaction) {
@@ -268,22 +313,6 @@ async function handleDrop(interaction) {
   const list = drops[map] || drops.erangel;
   const pick = list[Math.floor(Math.random() * list.length)];
   return interaction.reply(`🪂 Drop sorteado em **${map.toUpperCase()}**: **${pick}**. Sem choro.`);
-}
-
-
-async function handleChave(interaction) {
-  const embed = new EmbedBuilder()
-    .setTitle('🗝️ Mapas de Chaves Secretas / Salas Secretas')
-    .setDescription('Selecione um mapa abaixo para ver a imagem com as posições das chaves, salas ou security rooms.')
-    .setFooter({ text: 'Dica: em TPP squad, combine esse comando com /drop antes de cair.' })
-    .setTimestamp();
-
-  return interaction.reply({ embeds: [embed], components: [buildSecretKeySelectRow()] });
-}
-
-async function handleChaveSelect(interaction) {
-  const selectedMap = interaction.values?.[0] || 'erangel';
-  return interaction.update(buildSecretKeyMapPayload(selectedMap));
 }
 
 async function handleDesafio(interaction) {

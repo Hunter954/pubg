@@ -76,3 +76,30 @@ export function normalizeGameModeStats(rawStats = {}) {
     dbnos: rawStats.dBNOs || 0
   };
 }
+
+export async function getPlayerRecentMatchIds(accountId, shard = config.pubgShard) {
+  try {
+    const { data } = await client.get(`/shards/${shard}/players/${accountId}`);
+    return (data?.data?.relationships?.matches?.data || []).map((m) => m.id).filter(Boolean);
+  } catch (error) {
+    throw new Error(`Não consegui buscar partidas recentes: ${apiErrorMessage(error)}`);
+  }
+}
+
+export async function getMatch(matchId, shard = config.pubgShard) {
+  try {
+    const { data } = await client.get(`/shards/${shard}/matches/${matchId}`);
+    return data;
+  } catch (error) {
+    throw new Error(`Não consegui buscar a partida ${matchId}: ${apiErrorMessage(error)}`);
+  }
+}
+
+export async function getTelemetryEvents(assetUrl) {
+  try {
+    const { data } = await axios.get(assetUrl, { timeout: 30000, headers: { Accept: 'application/json' } });
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    throw new Error(`Não consegui baixar a telemetry da partida: ${apiErrorMessage(error)}`);
+  }
+}

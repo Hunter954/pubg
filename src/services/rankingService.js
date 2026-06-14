@@ -45,7 +45,7 @@ export async function syncGuild(guildId) {
 }
 
 export async function getRanking(guildId, orderBy = 'score', limit = 10) {
-  const valid = new Set(['score', 'kills', 'damage', 'wins', 'assists', 'revives', 'longestKill', 'matchesPlayed']);
+  const valid = new Set(['score', 'kills', 'damage', 'wins', 'assists', 'revives', 'longestKill', 'matchesPlayed', 'deaths', 'teamKills', 'headshotKills', 'dbnos']);
   const field = valid.has(orderBy) ? orderBy : 'score';
   return prisma.playerStats.findMany({
     where: { player: { guildId, isActive: true } },
@@ -65,4 +65,53 @@ export async function getPlayerStatsByDiscord(guildId, discordId) {
 export async function getMvp(guildId) {
   const rows = await getRanking(guildId, 'score', 1);
   return rows[0] || null;
+}
+
+export async function getTopRanking(guildId, orderBy = 'kills', limit = 10) {
+  const valid = new Set(['score', 'kills', 'damage', 'wins', 'assists', 'revives', 'longestKill', 'matchesPlayed', 'deaths', 'teamKills', 'headshotKills', 'dbnos']);
+  const field = valid.has(orderBy) ? orderBy : 'kills';
+  return prisma.playerStats.findMany({
+    where: { player: { guildId, isActive: true } },
+    include: { player: true },
+    orderBy: { [field]: 'desc' },
+    take: Math.min(Math.max(Number(limit) || 10, 1), 25)
+  });
+}
+
+export async function getPlayerEvolution(guildId, discordId, days = 7) {
+  const player = await prisma.player.findUnique({
+    where: { guildId_discordId: { guildId, discordId } },
+    include: { stats: true }
+  });
+  if (!player) return null;
+
+  const since = new Date(Date.now() - Math.max(Number(days) || 7, 1) * 24 * 60 * 60 * 1000);
+  const first = await prisma.statSnapshot.findFirst({
+    where: { playerId: player.id, createdAt: { gte: since } },
+    orderBy: { createdAt: 'asc' }
+  });
+  const last = await prisma.statSnapshot.findFirst({
+    where: { playerId: player.id },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  if (!first || !last || first.id === last.id) return { player, delta: null, since };
+
+  const delta = {
+    kills: Math.max(0, last.kills - first.kills),
+    assists: Math.max(0, last.assists - first.assists),
+    damage: Math.max(0, last.damage - first.damage),
+    wins: Math.max(0, last.wins - first.wins),
+    top10s: Math.max(0, last.top10s - first.top10s),
+    revives: Math.max(0, last.revives - first.revives),
+    matchesPlayed: Math.max(0, last.matchesPlayed - first.matchesPlayed),
+    deaths: Math.max(0, last.deaths - first.deaths),
+    teamKills: Math.max(0, last.teamKills - first.teamKills),
+    headshotKills: Math.max(0, last.headshotKills - first.headshotKills),
+    dbnos: Math.max(0, last.dbnos - first.dbnos),
+    longestKill: Number(last.longestKill || 0) > Number(first.longestKill || 0) ? Number(last.longestKill || 0) : 0
+  };
+  delta.score = calculateScore(delta);
+
+  return { player, delta, since, first, last };
 }
