@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GuildConfig {
+  id               Int      @id @default(autoincrement())
+  guildId          String   @unique
+  rankingChannelId String?
+  adminRoleId      String?
+  platform         String   @default("steam")
+  gameMode         String   @default("squad-fpp")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Player {
+  id            Int      @id @default(autoincrement())
+  guildId       String
+  discordId     String
+  discordName   String?
+  pubgNick      String
+  pubgAccountId String
+  platform      String   @default("steam")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  stats          PlayerStats?
+  snapshots      StatSnapshot[]
+
+  @@unique([guildId, discordId])
+  @@unique([guildId, pubgAccountId])
+  @@index([guildId, isActive])
+}
+
+model PlayerStats {
+  id             Int      @id @default(autoincrement())
+  playerId       Int      @unique
+  player         Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  seasonId       String?
+  gameMode       String   @default("squad-fpp")
+
+  score          Int      @default(0)
+  kills          Int      @default(0)
+  assists        Int      @default(0)
+  damage         Float    @default(0)
+  wins           Int      @default(0)
+  top10s         Int      @default(0)
+  revives        Int      @default(0)
+  longestKill    Float    @default(0)
+  matchesPlayed  Int      @default(0)
+  deaths         Int      @default(0)
+  teamKills      Int      @default(0)
+  headshotKills  Int      @default(0)
+  dbnos          Int      @default(0)
+  raw            Json?
+
+  updatedAt      DateTime @updatedAt
+}
+
+model StatSnapshot {
+  id             Int      @id @default(autoincrement())
+  playerId       Int
+  player         Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  seasonId       String?
+  gameMode       String
+  score          Int
+  kills          Int
+  assists        Int
+  damage         Float
+  wins           Int
+  top10s         Int
+  revives        Int
+  longestKill    Float
+  matchesPlayed  Int
+  deaths         Int
+  teamKills      Int
+  raw            Json?
+  createdAt      DateTime @default(now())
+
+  @@index([playerId, createdAt])
+}
