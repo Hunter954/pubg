@@ -154,3 +154,7 @@ prisma/
   schema.prisma
 railway.json
 ```
+
+## Observação sobre modos PUBG
+Na API oficial, o modo TPP padrão aparece como `squad`, `duo` ou `solo`. O modo FPP aparece como `squad-fpp`, `duo-fpp` ou `solo-fpp`.
+Então, para Squad TPP, use `/admin configurar-modo squad` no Discord.

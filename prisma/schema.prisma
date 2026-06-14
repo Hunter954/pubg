@@ -80,6 +80,8 @@ model StatSnapshot {
   matchesPlayed  Int
   deaths         Int
   teamKills      Int
+  headshotKills  Int      @default(0)
+  dbnos          Int      @default(0)
   raw            Json?
   createdAt      DateTime @default(now())
 
