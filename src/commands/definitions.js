@@ -139,6 +139,21 @@ export const commands = [
       { name: 'Sanhok', value: 'sanhok' }
     )),
 
+
+  new SlashCommandBuilder()
+    .setName('chave')
+    .setDescription('Mostra os mapas de chaves / salas secretas do PUBG')
+    .addStringOption((o) => o.setName('mapa').setDescription('Mapa. Vazio mostra todos.').addChoices(
+      { name: 'Todos', value: 'todos' },
+      { name: 'Erangel', value: 'erangel' },
+      { name: 'Miramar', value: 'miramar' },
+      { name: 'Taego', value: 'taego' },
+      { name: 'Vikendi', value: 'vikendi' },
+      { name: 'Deston', value: 'deston' },
+      { name: 'Paramo', value: 'paramo' },
+      { name: 'Rondo', value: 'rondo' }
+    )),
+
   new SlashCommandBuilder()
     .setName('desafio')
     .setDescription('Sorteia um desafio interno para o squad')

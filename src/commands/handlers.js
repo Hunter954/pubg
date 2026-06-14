@@ -1,4 +1,4 @@
-import { EmbedBuilder } from 'discord.js';
+import { AttachmentBuilder, EmbedBuilder } from 'discord.js';
 import { prisma } from '../db.js';
 import { findPlayerByName } from '../services/pubgApi.js';
 import { syncGuild, getRanking, getPlayerStatsByDiscord, getMvp, getTopRanking, getPlayerEvolution } from '../services/rankingService.js';
@@ -29,6 +29,49 @@ const CATEGORY_LABELS = {
   botDamageIgnored: 'Dano em bots ignorado'
 };
 
+
+const SECRET_KEY_ROOMS = {
+  erangel: {
+    label: 'Erangel',
+    file: 'erangel-secret-rooms.jpg',
+    title: '🗝️ Chaves / Salas secretas — Erangel'
+  },
+  miramar: {
+    label: 'Miramar',
+    file: 'miramar-secret-rooms.jpg',
+    title: '🗝️ Chaves / Salas secretas — Miramar'
+  },
+  taego: {
+    label: 'Taego',
+    file: 'taego-secret-rooms.jpg',
+    title: '🗝️ Chaves / Salas secretas — Taego'
+  },
+  vikendi: {
+    label: 'Vikendi',
+    file: 'vikendi-secret-key-locations.jpg',
+    title: '🗝️ Chaves / Salas secretas — Vikendi'
+  },
+  deston: {
+    label: 'Deston',
+    file: 'deston-security-keycard.jpg',
+    title: '🗝️ Security Keycard — Deston'
+  },
+  paramo: {
+    label: 'Paramo',
+    file: 'paramo-secret-rooms.jpg',
+    title: '🗝️ Chaves / Salas secretas — Paramo'
+  },
+  rondo: {
+    label: 'Rondo',
+    file: 'rondo-secret-rooms.jpg',
+    title: '🗝️ Chaves / Salas secretas — Rondo'
+  }
+};
+
+function secretKeyAssetPath(fileName) {
+  return new URL(`../assets/secret-keys/${fileName}`, import.meta.url);
+}
+
 function statValue(row, field) {
   if (field === 'damage') return num(row[field], 0);
   if (field === 'longestKill') return `${num(row[field], 0)}m`;
@@ -48,6 +91,7 @@ export async function handleInteraction(interaction) {
     if (interaction.commandName === 'timeline') return handleTimeline(interaction);
     if (interaction.commandName === 'mvp') return handleMvp(interaction);
     if (interaction.commandName === 'drop') return handleDrop(interaction);
+    if (interaction.commandName === 'chave') return handleChave(interaction);
     if (interaction.commandName === 'desafio') return handleDesafio(interaction);
   } catch (error) {
     console.error('[interaction:error]', { message: error.message, status: error?.response?.status, data: error?.response?.data });
@@ -393,6 +437,30 @@ async function handleDrop(interaction) {
   const list = drops[map] || drops.erangel;
   const pick = list[Math.floor(Math.random() * list.length)];
   return interaction.reply(`🪂 Drop sorteado em **${map.toUpperCase()}**: **${pick}**. Sem choro.`);
+}
+
+
+async function handleChave(interaction) {
+  const selected = interaction.options.getString('mapa') || 'todos';
+  const keys = selected === 'todos' ? Object.keys(SECRET_KEY_ROOMS) : [selected];
+  const rooms = keys.map((key) => SECRET_KEY_ROOMS[key]).filter(Boolean);
+
+  if (!rooms.length) {
+    return interaction.reply({ content: '❌ Mapa inválido para /chave.', ephemeral: true });
+  }
+
+  const files = rooms.map((room) => new AttachmentBuilder(secretKeyAssetPath(room.file), { name: room.file }));
+  const description = selected === 'todos'
+    ? rooms.map((room) => `• **${room.label}**`).join('\n')
+    : `Mapa: **${rooms[0].label}**`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(selected === 'todos' ? '🗝️ Chaves / Salas secretas PUBG' : rooms[0].title)
+    .setDescription(description)
+    .setFooter({ text: 'Imagens salvas localmente no bot.' })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed], files });
 }
 
 async function handleDesafio(interaction) {
