@@ -180,7 +180,7 @@ async function handleAdmin(interaction) {
 async function handleRank(interaction) {
   const order = interaction.options.getString('ordem') || 'score';
   const limit = interaction.options.getInteger('limite') || 10;
-  let tipo = interaction.options.getString('tipo') || 'oficial';
+  let tipo = interaction.options.getString('tipo') || 'limpo';
   if (['botKillsIgnored', 'botDbnosIgnored', 'botDamageIgnored'].includes(order)) tipo = 'limpo';
   const ranking = tipo === 'limpo'
     ? await getCleanRanking(interaction.guildId, order, limit)
@@ -234,7 +234,7 @@ async function handleMonthlyRanking(interaction) {
 async function handleTop(interaction) {
   const category = interaction.options.getString('categoria', true);
   const limit = interaction.options.getInteger('limite') || 10;
-  let tipo = interaction.options.getString('tipo') || 'oficial';
+  let tipo = interaction.options.getString('tipo') || 'limpo';
   if (['botKillsIgnored', 'botDbnosIgnored', 'botDamageIgnored'].includes(category)) tipo = 'limpo';
   const rows = tipo === 'limpo'
     ? await getCleanTopRanking(interaction.guildId, category, limit)
@@ -257,7 +257,7 @@ async function handleTop(interaction) {
 
 async function handlePerfil(interaction) {
   const user = interaction.options.getUser('usuario') || interaction.user;
-  const tipo = interaction.options.getString('tipo') || 'oficial';
+  const tipo = interaction.options.getString('tipo') || 'limpo';
   const player = tipo === 'limpo'
     ? await getCleanPlayerStatsByDiscord(interaction.guildId, user.id)
     : await getPlayerStatsByDiscord(interaction.guildId, user.id);

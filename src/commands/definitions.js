@@ -40,7 +40,7 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('rank')
-    .setDescription('Mostra o ranking interno PUBG')
+    .setDescription('Mostra o ranking PUBG limpo por padrão')
     .addStringOption((o) => o.setName('ordem').setDescription('Ordenar por').addChoices(
       { name: 'Score', value: 'score' },
       { name: 'Kills', value: 'kills' },
@@ -56,19 +56,19 @@ export const commands = [
       { name: 'DBNOs em bots ignorados', value: 'botDbnosIgnored' },
       { name: 'Dano em bots ignorado', value: 'botDamageIgnored' }
     ))
-    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
-      { name: 'Oficial', value: 'oficial' },
-      { name: 'Limpo / sem bots', value: 'limpo' }
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking. Padrão: Limpo / sem bots').addChoices(
+      { name: 'Limpo / sem bots (padrão)', value: 'limpo' },
+      { name: 'Oficial PUBG / sem filtro', value: 'oficial' }
     ))
     .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
 
   new SlashCommandBuilder()
     .setName('perfil')
-    .setDescription('Mostra o perfil PUBG de um jogador')
+    .setDescription('Mostra o perfil PUBG limpo por padrão')
     .addUserOption((o) => o.setName('usuario').setDescription('Usuário do Discord'))
-    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de estatística').addChoices(
-      { name: 'Oficial', value: 'oficial' },
-      { name: 'Limpo / sem bots', value: 'limpo' }
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de estatística. Padrão: Limpo / sem bots').addChoices(
+      { name: 'Limpo / sem bots (padrão)', value: 'limpo' },
+      { name: 'Oficial PUBG / sem filtro', value: 'oficial' }
     )),
 
 
@@ -91,7 +91,7 @@ export const commands = [
 
   new SlashCommandBuilder()
     .setName('top')
-    .setDescription('Ranking por categoria')
+    .setDescription('Ranking por categoria limpo por padrão')
     .addStringOption((o) => o.setName('categoria').setDescription('Categoria').setRequired(true).addChoices(
       { name: 'Kills', value: 'kills' },
       { name: 'Dano', value: 'damage' },
@@ -105,9 +105,9 @@ export const commands = [
       { name: 'DBNOs em bots ignorados', value: 'botDbnosIgnored' },
       { name: 'Dano em bots ignorado', value: 'botDamageIgnored' }
     ))
-    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking').addChoices(
-      { name: 'Oficial', value: 'oficial' },
-      { name: 'Limpo / sem bots', value: 'limpo' }
+    .addStringOption((o) => o.setName('tipo').setDescription('Tipo de ranking. Padrão: Limpo / sem bots').addChoices(
+      { name: 'Limpo / sem bots (padrão)', value: 'limpo' },
+      { name: 'Oficial PUBG / sem filtro', value: 'oficial' }
     ))
     .addIntegerOption((o) => o.setName('limite').setDescription('Quantidade de jogadores, até 25')),
 
