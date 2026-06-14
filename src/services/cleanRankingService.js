@@ -5,6 +5,8 @@ import { getCurrentSeasonId, getPlayerRecentMatchIds, getMatch, getTelemetryEven
 
 const CLEAN_PARSER_VERSION = 'teamid-200-v2';
 const BOT_TEAM_ID_MIN = 200;
+const DEFAULT_MAX_RECENT_PER_PLAYER = 100;
+const DEFAULT_MAX_CANDIDATE_MATCHES = 250;
 
 const CLEAN_ORDER_FIELDS = new Set([
   'score', 'kills', 'damage', 'botDamageIgnored', 'wins', 'top10s', 'revives', 'longestKill',
@@ -334,7 +336,11 @@ export async function syncCleanGuild(guildId, options = {}) {
 
   const playerByAccountId = new Map(players.map((p) => [p.pubgAccountId, p]));
   const candidateMatchIds = new Map();
-  const maxRecentPerPlayer = Math.min(Math.max(Number(options.maxRecentPerPlayer) || 10, 1), 20);
+  // A PUBG API oficial só expõe partidas recentes dentro da janela de retenção dela.
+  // Por padrão tentamos processar todas que vierem no player object, com limites de segurança
+  // para não travar o bot caso muitos jogadores estejam cadastrados no servidor.
+  const maxRecentPerPlayer = Math.min(Math.max(Number(options.maxRecentPerPlayer) || DEFAULT_MAX_RECENT_PER_PLAYER, 1), 100);
+  const maxCandidateMatches = Math.min(Math.max(Number(options.maxCandidateMatches) || DEFAULT_MAX_CANDIDATE_MATCHES, 1), 500);
   const playerErrors = [];
 
   for (const player of players) {
@@ -352,7 +358,8 @@ export async function syncCleanGuild(guildId, options = {}) {
     }
   }
 
-  const candidates = [...candidateMatchIds.values()].sort((a, b) => a.bestIndex - b.bestIndex).slice(0, 30);
+  const totalCandidateMatches = candidateMatchIds.size;
+  const candidates = [...candidateMatchIds.values()].sort((a, b) => a.bestIndex - b.bestIndex).slice(0, maxCandidateMatches);
   const matchErrors = [];
   const changedPlayerIds = new Set();
   let processedMatches = 0;
@@ -472,6 +479,10 @@ export async function syncCleanGuild(guildId, options = {}) {
     parserVersion: CLEAN_PARSER_VERSION,
     candidateMatches: candidates.length,
     foundMatches: candidates.length,
+    totalCandidateMatches,
+    maxRecentPerPlayer,
+    maxCandidateMatches,
+    retentionWindowDays: 14,
     processedMatches,
     skippedMatches,
     updatedPlayers,

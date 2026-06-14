@@ -129,7 +129,12 @@ async function handleAdmin(interaction) {
 
   if (sub === 'sync-limpo') {
     await interaction.deferReply();
-    const result = await syncCleanGuild(guildId);
+    const limitePorJogador = interaction.options.getInteger('limite_por_jogador') || undefined;
+    const limiteTotal = interaction.options.getInteger('limite_total') || undefined;
+    const result = await syncCleanGuild(guildId, {
+      maxRecentPerPlayer: limitePorJogador,
+      maxCandidateMatches: limiteTotal
+    });
     const failLines = result.errors
       .slice(0, 5)
       .map((r) => `• Match ${r.matchId}: ${r.error}`)
@@ -143,7 +148,7 @@ async function handleAdmin(interaction) {
       failLines ? `\n\n⚠️ Falhas em partidas:\n${failLines}` : ''
     ].join('');
     return interaction.editReply(
-      `✅ Sync limpo finalizado. Modo: **${result.gameMode}** | Partidas encontradas: **${result.foundMatches}** | Novas/reprocessadas: **${result.processedMatches}** | Já processadas/puladas: **${result.skippedMatches}** | Jogadores atualizados: **${result.updatedPlayers.length}**\n` +
+      `✅ Sync limpo finalizado. Modo: **${result.gameMode}** | Janela API: **últimos ${result.retentionWindowDays} dias disponíveis** | Partidas únicas achadas: **${result.totalCandidateMatches}** | Partidas no sync: **${result.foundMatches}** | Novas/reprocessadas: **${result.processedMatches}** | Já processadas/puladas: **${result.skippedMatches}** | Jogadores atualizados: **${result.updatedPlayers.length}**\n` +
       `Kills reais: **${int(result.realKills)}** | Kills em bots ignoradas: **${int(result.botKillsIgnored)}** | DBNOs reais: **${int(result.realDbnos)}** | DBNOs em bots ignorados: **${int(result.botDbnosIgnored)}** | Dano limpo: **${num(result.cleanDamage, 0)}** | Dano em bots ignorado: **${num(result.botDamageIgnored, 0)}**${extra}`
     );
   }
