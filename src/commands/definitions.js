@@ -64,6 +64,11 @@ export const commands = [
       { name: 'Sanhok', value: 'sanhok' }
     )),
 
+
+  new SlashCommandBuilder()
+    .setName('chave')
+    .setDescription('Mostra o mapa das chaves secretas / salas secretas do PUBG'),
+
   new SlashCommandBuilder()
     .setName('desafio')
     .setDescription('Sorteia um desafio interno para o squad')

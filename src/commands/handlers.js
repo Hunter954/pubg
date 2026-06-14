@@ -1,4 +1,5 @@
-import { EmbedBuilder } from 'discord.js';
+import { ActionRowBuilder, AttachmentBuilder, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../db.js';
 import { findPlayerByName } from '../services/pubgApi.js';
 import { syncGuild, getRanking, getPlayerStatsByDiscord, getMvp } from '../services/rankingService.js';
@@ -8,15 +9,100 @@ import { requireAdmin } from '../utils/permissions.js';
 import { getRankName } from '../utils/score.js';
 import { int, num, kd } from '../utils/format.js';
 
-export async function handleInteraction(interaction) {
-  if (!interaction.isChatInputCommand()) return;
 
+const SECRET_KEY_SELECT_ID = 'pubg_secret_key_map_select';
+
+const SECRET_KEY_MAPS = {
+  erangel: {
+    label: 'Erangel',
+    title: '🗝️ Erangel — Salas Secretas / Chaves',
+    description: 'Mapa com posições de salas/chaves secretas em Erangel.',
+    fileName: 'erangel-secret-rooms.jpg'
+  },
+  miramar: {
+    label: 'Miramar',
+    title: '🗝️ Miramar — Salas Secretas / Chaves',
+    description: 'Mapa com posições de salas/chaves secretas em Miramar.',
+    fileName: 'miramar-secret-rooms.jpg'
+  },
+  rondo: {
+    label: 'Rondo',
+    title: '🗝️ Rondo — Salas Secretas / Chaves',
+    description: 'Mapa com posições de salas/chaves secretas em Rondo.',
+    fileName: 'rondo-secret-rooms.jpg'
+  },
+  paramo: {
+    label: 'Paramo',
+    title: '🗝️ Paramo — Salas Secretas / Chaves',
+    description: 'Mapa com posições de salas/chaves secretas em Paramo.',
+    fileName: 'paramo-secret-rooms.jpg'
+  },
+  deston: {
+    label: 'Deston',
+    title: '🗝️ Deston — Security Key Card / Security Rooms',
+    description: 'Mapa com posições de cartões, salas e caminhões de segurança em Deston.',
+    fileName: 'deston-security-keycard.jpg'
+  },
+  taego: {
+    label: 'Taego',
+    title: '🗝️ Taego — Salas Secretas',
+    description: 'Mapa com posições de salas secretas em Taego.',
+    fileName: 'taego-secret-rooms.jpg'
+  },
+  vikendi: {
+    label: 'Vikendi',
+    title: '🗝️ Vikendi — Secret Key / Salas Secretas',
+    description: 'Mapa com posições de chaves e salas secretas em Vikendi.',
+    fileName: 'vikendi-secret-key-locations.jpg'
+  }
+};
+
+function buildSecretKeySelectRow(selectedValue = null) {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(SECRET_KEY_SELECT_ID)
+      .setPlaceholder('Selecione o mapa')
+      .addOptions(Object.entries(SECRET_KEY_MAPS).map(([value, map]) => ({
+        label: map.label,
+        value,
+        description: map.description.slice(0, 100),
+        default: value === selectedValue
+      })))
+  );
+}
+
+function buildSecretKeyMapPayload(mapValue) {
+  const map = SECRET_KEY_MAPS[mapValue] || SECRET_KEY_MAPS.erangel;
+  const imageUrl = new URL(`../assets/secret-keys/${map.fileName}`, import.meta.url);
+  const attachment = new AttachmentBuilder(fileURLToPath(imageUrl), { name: map.fileName });
+  const embed = new EmbedBuilder()
+    .setTitle(map.title)
+    .setDescription(`${map.description}\n\nUse o seletor abaixo para trocar de mapa.`)
+    .setImage(`attachment://${map.fileName}`)
+    .setFooter({ text: 'PUBG Ranking Bot • mapas de referência enviados pela comunidade' })
+    .setTimestamp();
+
+  return {
+    embeds: [embed],
+    components: [buildSecretKeySelectRow(mapValue)],
+    files: [attachment]
+  };
+}
+
+export async function handleInteraction(interaction) {
   try {
+    if (interaction.isStringSelectMenu() && interaction.customId === SECRET_KEY_SELECT_ID) {
+      return handleChaveSelect(interaction);
+    }
+
+    if (!interaction.isChatInputCommand()) return;
+
     if (interaction.commandName === 'admin') return handleAdmin(interaction);
     if (interaction.commandName === 'rank') return handleRank(interaction);
     if (interaction.commandName === 'perfil') return handlePerfil(interaction);
     if (interaction.commandName === 'mvp') return handleMvp(interaction);
     if (interaction.commandName === 'drop') return handleDrop(interaction);
+    if (interaction.commandName === 'chave') return handleChave(interaction);
     if (interaction.commandName === 'desafio') return handleDesafio(interaction);
   } catch (error) {
     console.error('[interaction:error]', { message: error.message, status: error?.response?.status, data: error?.response?.data });
@@ -182,6 +268,22 @@ async function handleDrop(interaction) {
   const list = drops[map] || drops.erangel;
   const pick = list[Math.floor(Math.random() * list.length)];
   return interaction.reply(`🪂 Drop sorteado em **${map.toUpperCase()}**: **${pick}**. Sem choro.`);
+}
+
+
+async function handleChave(interaction) {
+  const embed = new EmbedBuilder()
+    .setTitle('🗝️ Mapas de Chaves Secretas / Salas Secretas')
+    .setDescription('Selecione um mapa abaixo para ver a imagem com as posições das chaves, salas ou security rooms.')
+    .setFooter({ text: 'Dica: em TPP squad, combine esse comando com /drop antes de cair.' })
+    .setTimestamp();
+
+  return interaction.reply({ embeds: [embed], components: [buildSecretKeySelectRow()] });
+}
+
+async function handleChaveSelect(interaction) {
+  const selectedMap = interaction.values?.[0] || 'erangel';
+  return interaction.update(buildSecretKeyMapPayload(selectedMap));
 }
 
 async function handleDesafio(interaction) {
